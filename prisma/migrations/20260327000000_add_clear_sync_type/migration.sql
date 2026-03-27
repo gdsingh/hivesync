@@ -1,0 +1,1 @@
+ALTER TYPE "SyncType" ADD VALUE 'CLEAR';
