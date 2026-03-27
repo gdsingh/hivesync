@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model UserConfig {
+  id                   Int      @id @default(autoincrement())
+  foursquareToken      String?
+  foursquareUserId     String?
+  foursquareDisplayName String?
+  foursquarePhotoUrl   String?
+  googleCredentialsJson String?
+  googleEmail          String?
+  googlePhotoUrl       String?
+  ogMode               Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("user_config")
+}
+
+model SyncedCheckin {
+  checkinId        String   @id
+  calendarEventId  String
+  calendarEventUrl String?
+  venueId          String?
+  venueName        String?
+  venueCity        String?
+  venueCategory    String?
+  checkinTimestamp Int?
+  isMayor          Boolean  @default(false)
+  description      String?
+  stickerImageUrl  String?
+  syncedAt         DateTime @default(now())
+
+  @@map("synced_checkins")
+}
+
+model SyncLog {
+  id           String   @id @default(uuid())
+  type         SyncType
+  synced       Int      @default(0)
+  skipped      Int      @default(0)
+  errors       Int      @default(0)
+  errorMessage String?
+  fromDate     String?
+  toDate       String?
+  createdAt    DateTime @default(now())
+
+  @@map("sync_logs")
+}
+
+model SyncJob {
+  id             String    @id @default(uuid())
+  status         JobStatus @default(PENDING)
+  afterTimestamp  Int?
+  beforeTimestamp Int?
+  currentOffset   Int       @default(0)
+  totalSynced    Int       @default(0)
+  totalSkipped   Int       @default(0)
+  totalErrors    Int       @default(0)
+  errorMessage   String?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@map("sync_jobs")
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum SyncType {
+  FULL
+  QUICK
+  POLL
+  RANGE
+  DELETE
+  RESYNC
+  CLEAR
+}
