@@ -25,7 +25,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
+# env files — never commit
+.env
 .env*.local
 
 # vercel
@@ -34,3 +35,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# database
+*.db
+*.db-journal
+prisma/*.db
+prisma/generated/
+
+# claude
+CLAUDE.md
+
+# personal
+LAUNCH.md
+MOBILE.md
+DEMO_BRANCH.md
+git-history.txt
+
+# demo assets — only needed on the `demo` branch
+public/hemingway.jpg
+
