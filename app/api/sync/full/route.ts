@@ -27,8 +27,12 @@ export async function POST(req: NextRequest) {
   const foursquareToken = decrypt(userConfig.foursquareToken);
 
   // afterTimestamp = jan 1 of the selected year, or undefined for all time
+  // beforeTimestamp = jan 1 of the *next* year — scopes the sync to that year only
   const afterTimestamp = fromYear
-    ? Math.floor(new Date(fromYear, 0, 1).getTime() / 1000)
+    ? Math.floor(Date.UTC(fromYear, 0, 1) / 1000)
+    : undefined;
+  const beforeTimestamp = fromYear
+    ? Math.floor(Date.UTC(fromYear + 1, 0, 1) / 1000)
     : undefined;
 
   // reject if a sync is already running
@@ -42,6 +46,7 @@ export async function POST(req: NextRequest) {
     data: {
       status: "RUNNING",
       afterTimestamp: afterTimestamp ?? null,
+      beforeTimestamp: beforeTimestamp ?? null,
       currentOffset: 0,
     },
   });
@@ -51,11 +56,18 @@ export async function POST(req: NextRequest) {
   const calendarService = google.calendar({ version: "v3", auth });
   const calendarId = await ensureSwarmCalendar(calendarService);
 
-  const { items, total } = await fetchCheckins(
+  const { items: rawItems, total } = await fetchCheckins(
     foursquareToken,
     0,
     afterTimestamp,
-    CHUNK_SIZE
+    CHUNK_SIZE,
+    beforeTimestamp
+  );
+
+  // post-fetch filter: foursquare's timestamp params are not always strictly exclusive
+  const items = rawItems.filter((c) =>
+    (afterTimestamp === undefined || c.createdAt >= afterTimestamp) &&
+    (beforeTimestamp === undefined || c.createdAt < beforeTimestamp)
   );
 
   const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);

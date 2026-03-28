@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
-  const period = req.nextUrl.searchParams.get("period") ?? "all";
+  const { searchParams } = req.nextUrl;
+  const period = searchParams.get("period") ?? "all";
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
 
   const now = Math.floor(Date.now() / 1000);
   let afterTs: number | undefined;
   let beforeTs: number | undefined;
 
-  if (period === "week") {
+  if (from && to) {
+    afterTs = Math.floor(new Date(from).getTime() / 1000);
+    beforeTs = Math.floor(new Date(to + "T23:59:59").getTime() / 1000);
+  } else if (period === "week") {
     afterTs = now - 7 * 24 * 3600;
   } else if (period === "30d") {
     afterTs = now - 30 * 24 * 3600;

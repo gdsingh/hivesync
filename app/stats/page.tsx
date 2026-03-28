@@ -35,7 +35,7 @@ export default async function StatsPage() {
       where: { venueId: { not: null } },
       _count: { checkinId: true },
       orderBy: { _count: { checkinId: "desc" } },
-      take: 5,
+      take: 10,
     }),
     db.syncedCheckin.groupBy({
       by: ["venueCity"],
@@ -49,7 +49,7 @@ export default async function StatsPage() {
       where: { venueCategory: { not: null } },
       _count: { checkinId: true },
       orderBy: { _count: { checkinId: "desc" } },
-      take: 5,
+      take: 10,
     }),
     db.syncedCheckin.findMany({
       where: { checkinTimestamp: { not: null } },
@@ -80,6 +80,33 @@ export default async function StatsPage() {
   const byYear = Array.from(yearMap.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([year, count]) => ({ year, count }));
+
+  // fetch foursquare total per year for completeness coloring
+  let foursquareByYear: { year: number; total: number }[] = [];
+  if (config?.foursquareToken && byYear.length > 0) {
+    const token = decrypt(config.foursquareToken);
+    foursquareByYear = await Promise.all(
+      byYear.map(async ({ year }) => {
+        const afterTs = Math.floor(new Date(year, 0, 1).getTime() / 1000);
+        const beforeTs = Math.floor(new Date(year + 1, 0, 1).getTime() / 1000);
+        try {
+          const params = new URLSearchParams({
+            oauth_token: token,
+            v: "20240101",
+            limit: "1",
+            afterTimestamp: String(afterTs),
+            beforeTimestamp: String(beforeTs),
+          });
+          const res = await fetch(`https://api.foursquare.com/v2/users/self/checkins?${params}`);
+          if (!res.ok) return { year, total: 0 };
+          const data = await res.json();
+          return { year, total: data?.response?.checkins?.count ?? 0 };
+        } catch {
+          return { year, total: 0 };
+        }
+      })
+    );
+  }
 
   // compute byDayOfWeek from all timestamps
   const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -198,6 +225,7 @@ export default async function StatsPage() {
       topCities={topCities}
       topCategories={topCategories}
       byYear={byYear}
+      foursquareByYear={foursquareByYear}
       byDayOfWeek={byDayOfWeek}
       byHourOfDay={byHourOfDay}
       lastSyncedAt={lastSyncedAt}

@@ -53,11 +53,18 @@ async function getCities(afterTs?: number, beforeTs?: number) {
 }
 
 export async function GET(req: NextRequest) {
-  const period = req.nextUrl.searchParams.get("period") ?? "all";
+  const { searchParams } = req.nextUrl;
+  const period = searchParams.get("period") ?? "all";
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
 
   let cities: { city: string; count: number }[];
 
-  if (period === "all") {
+  if (from && to) {
+    const afterTs = Math.floor(new Date(from).getTime() / 1000);
+    const beforeTs = Math.floor(new Date(to + "T23:59:59").getTime() / 1000);
+    cities = await getCities(afterTs, beforeTs);
+  } else if (period === "all") {
     cities = await getCities();
   } else {
     const now = Math.floor(Date.now() / 1000);

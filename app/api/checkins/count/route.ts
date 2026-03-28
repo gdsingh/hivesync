@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     where: {
       checkinTimestamp: {
         gte: parseInt(after),
-        lte: parseInt(before),
+        lt: parseInt(before),
       },
     },
   });

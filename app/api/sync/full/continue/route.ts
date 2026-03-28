@@ -47,12 +47,20 @@ export async function POST(req: NextRequest) {
   const calendarService = google.calendar({ version: "v3", auth });
   const calendarId = await ensureSwarmCalendar(calendarService);
 
-  const { items, total } = await fetchCheckins(
+  const { items: rawItems, total } = await fetchCheckins(
     foursquareToken,
     job.currentOffset,
     job.afterTimestamp ?? undefined,
     CHUNK_SIZE,
     job.beforeTimestamp ?? undefined
+  );
+
+  // post-fetch filter: foursquare's timestamp params are not always strictly exclusive
+  const after = job.afterTimestamp ?? undefined;
+  const before = job.beforeTimestamp ?? undefined;
+  const items = rawItems.filter((c) =>
+    (after === undefined || c.createdAt >= after) &&
+    (before === undefined || c.createdAt < before)
   );
 
   const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);

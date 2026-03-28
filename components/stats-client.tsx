@@ -4,6 +4,11 @@ import { useState, useEffect } from "react";
 import { AppHeader } from "@/components/app-header";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
   ChartConfig,
   ChartContainer,
@@ -30,6 +35,7 @@ interface Props {
   topCities: { city: string; count: number }[];
   topCategories: { category: string; count: number }[];
   byYear: { year: number; count: number }[];
+  foursquareByYear?: { year: number; total: number }[];
   byDayOfWeek: { day: string; count: number }[];
   byHourOfDay: { hour: number; count: number }[];
   lastSyncedAt: Date | null;
@@ -90,8 +96,21 @@ const chartConfig = {
   count: { label: "Check-ins", color: "hsl(var(--foreground))" },
 } satisfies ChartConfig;
 
-function YearBarChart({ items }: { items: { label: string; count: number }[] }) {
-  const data = items.map((i) => ({ label: `'${i.label.slice(2)}`, count: i.count }));
+function yearCompletionFill(synced: number, total: number): string {
+  if (total <= 0) return "#888";
+  const ratio = Math.min(synced / total, 1);
+  if (ratio >= 1.0) return "hsl(142, 71%, 45%)";
+  if (ratio >= 0.75) return "hsl(142, 60%, 55%)";
+  if (ratio >= 0.5) return "hsl(25, 95%, 53%)";
+  if (ratio >= 0.25) return "hsl(38, 92%, 50%)";
+  return "#888";
+}
+
+function YearBarChart({ items, foursquareByYear }: {
+  items: { label: string; count: number }[];
+  foursquareByYear?: { year: number; total: number }[];
+}) {
+  const data = items.map((i) => ({ label: `'${i.label.slice(2)}`, count: i.count, year: parseInt(i.label) }));
   return (
     <ChartContainer config={chartConfig} className="h-28 w-full">
       <BarChart data={data} margin={{ top: 12, right: 0, bottom: 0, left: 0 }}>
@@ -100,7 +119,11 @@ function YearBarChart({ items }: { items: { label: string; count: number }[] }) 
         <ChartTooltip content={<ChartTooltipContent hideLabel={false} nameKey="count" />} cursor={{ fill: "hsl(var(--muted))" }} />
         <Bar dataKey="count" radius={[3, 3, 0, 0]}>
           <LabelList dataKey="count" position="top" style={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-          {data.map((_, i) => <Cell key={i} fill="hsl(var(--foreground) / 0.7)" />)}
+          {data.map((d, i) => {
+            const fsq = foursquareByYear?.find((f) => f.year === d.year);
+            const fill = fsq ? yearCompletionFill(d.count, fsq.total) : "#888";
+            return <Cell key={i} fill={fill} />;
+          })}
         </Bar>
       </BarChart>
     </ChartContainer>
@@ -117,7 +140,7 @@ function DayBarChart({ items }: { items: { label: string; count: number }[] }) {
         <ChartTooltip content={<ChartTooltipContent hideLabel={false} nameKey="count" />} cursor={{ fill: "hsl(var(--muted))" }} />
         <Bar dataKey="count" radius={[3, 3, 0, 0]}>
           <LabelList dataKey="count" position="top" style={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-          {data.map((_, i) => <Cell key={i} fill="hsl(var(--foreground) / 0.7)" />)}
+          {data.map((_, i) => <Cell key={i} fill="#888" />)}
         </Bar>
       </BarChart>
     </ChartContainer>
@@ -149,7 +172,7 @@ function HourBarChart({ items }: { items: { hour: number; count: number }[] }) {
         <ChartTooltip content={<ChartTooltipContent hideLabel={false} nameKey="count" />} cursor={{ fill: "hsl(var(--muted))" }} />
         <Bar dataKey="count" radius={[3, 3, 0, 0]}>
           <LabelList dataKey="count" position="top" style={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-          {data.map((_, i) => <Cell key={i} fill="hsl(var(--foreground) / 0.7)" />)}
+          {data.map((_, i) => <Cell key={i} fill="#888" />)}
         </Bar>
       </BarChart>
     </ChartContainer>
@@ -191,6 +214,7 @@ export function StatsClient({
   topCities,
   topCategories,
   byYear,
+  foursquareByYear,
   byDayOfWeek,
   byHourOfDay,
   lastSyncedAt,
@@ -214,7 +238,14 @@ export function StatsClient({
     ...(pastYears.length === 0 ? [{ key: "year", label: "this year" }] : []),
   ];
 
-  const [period, setPeriod] = useState(isPreview && !previewPeriodData ? "all" : "30d");
+  const [period, setPeriod] = useState(isPreview && !previewPeriodData ? "all" : "90d");
+  const [rangeFrom, setRangeFrom] = useState<Date | undefined>(undefined);
+  const [rangeTo, setRangeTo] = useState<Date | undefined>(undefined);
+  const [showCustomRange, setShowCustomRange] = useState(false);
+
+  const activeRange = rangeFrom
+    ? { from: format(rangeFrom, "yyyy-MM-dd"), to: rangeTo ? format(rangeTo, "yyyy-MM-dd") : format(rangeFrom, "yyyy-MM-dd") }
+    : null;
   const [periodVenues, setPeriodVenues] = useState<VenueRow[] | null>(null);
   const [periodCategories, setPeriodCategories] = useState<{ category: string; count: number }[] | null>(null);
   const [periodCities, setPeriodCities] = useState<{ city: string; count: number }[] | null>(null);
@@ -231,7 +262,7 @@ export function StatsClient({
   })();
 
   useEffect(() => {
-    if (period === "all") {
+    if (period === "all" && !activeRange) {
       setPeriodVenues(null); setPeriodCategories(null); setPeriodCities(null);
       setPeriodMapUrl(undefined); setPeriodByHour(null); setPeriodSummary(null);
       return;
@@ -248,14 +279,17 @@ export function StatsClient({
       }
       return;
     }
+    const params = activeRange
+      ? `from=${activeRange.from}&to=${activeRange.to}`
+      : `period=${period}`;
     setPeriodLoading(true);
     setPeriodVenues(null); setPeriodCategories(null); setPeriodCities(null); setPeriodByHour(null); setPeriodSummary(null);
     Promise.all([
-      fetch(`/api/stats/venues?period=${period}`).then((r) => r.json()),
-      fetch(`/api/stats/categories?period=${period}`).then((r) => r.json()),
-      fetch(`/api/stats/cities?period=${period}`).then((r) => r.json()),
-      fetch(`/api/stats/by-hour?period=${period}`).then((r) => r.json()),
-      fetch(`/api/stats/summary?period=${period}`).then((r) => r.json()),
+      fetch(`/api/stats/venues?${params}`).then((r) => r.json()),
+      fetch(`/api/stats/categories?${params}`).then((r) => r.json()),
+      fetch(`/api/stats/cities?${params}`).then((r) => r.json()),
+      fetch(`/api/stats/by-hour?${params}`).then((r) => r.json()),
+      fetch(`/api/stats/summary?${params}`).then((r) => r.json()),
     ])
       .then(([v, c, ci, h, s]) => {
         setPeriodVenues(v);
@@ -270,14 +304,15 @@ export function StatsClient({
         setPeriodByHour([]); setPeriodMapUrl(null);
       })
       .finally(() => setPeriodLoading(false));
-  }, [period, isPreview, previewPeriodData]);
+  }, [period, rangeFrom, rangeTo, isPreview, previewPeriodData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isPeriodYear = pastYears.includes(Number(period)) || Number(period) === currentYear;
-  const displayedVenues = period === "all" ? topVenues : (periodVenues ?? []);
-  const displayedCategories = period === "all" ? topCategories : (periodCategories ?? []);
-  const displayedCities = period === "all" ? topCities : (periodCities ?? []);
-  const displayedMapUrl = period === "all" ? mapUrl : (periodMapUrl === undefined ? null : periodMapUrl);
-  const displayedByHour = period === "all" ? byHourOfDay : (periodByHour ?? []);
+  const isFiltered = activeRange || period !== "all";
+  const displayedVenues = isFiltered ? (periodVenues ?? []) : topVenues;
+  const displayedCategories = isFiltered ? (periodCategories ?? []) : topCategories;
+  const displayedCities = isFiltered ? (periodCities ?? []) : topCities;
+  const displayedMapUrl = isFiltered ? (periodMapUrl === undefined ? null : periodMapUrl) : mapUrl;
+  const displayedByHour = isFiltered ? (periodByHour ?? []) : byHourOfDay;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
@@ -330,104 +365,162 @@ export function StatsClient({
       ) : (<>
 
       {/* period picker */}
-      <div className="flex items-center justify-between gap-4">
-        {/* left: summary */}
-        <div className="text-xs text-muted-foreground shrink-0">
-          {period === "all" ? (
-            <span>
-              <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{totalCheckins.toLocaleString()}</span>
-              {" "}check-ins
-              {allTimeAvgPerWeek !== null && (
-                <>
-                  <span className="mx-1.5 text-border">·</span>
-                  <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">~{allTimeAvgPerWeek}</span>
-                  {" "}/wk
-                </>
-              )}
-              {mayorshipsAllTime > 0 && (
-                <>
-                  <span className="mx-1.5 text-border">·</span>
-                  <LuCrown size={10} className="inline text-amber-400 mr-0.5 -mt-0.5" />
-                  <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{mayorshipsAllTime}</span>
-                  {" "}earned
-                </>
-              )}
-            </span>
-          ) : periodLoading ? (
-            <Skeleton className="h-3 w-32" />
-          ) : periodSummary ? (
-            <span>
-              <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{periodSummary.total.toLocaleString()}</span>
-              {" "}check-ins
-              <span className="mx-1.5 text-border">·</span>
-              <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">~{periodSummary.avgPerWeek}</span>
-              {" "}/wk
-              {periodSummary.mayorships > 0 && (
-                <>
-                  <span className="mx-1.5 text-border">·</span>
-                  <LuCrown size={10} className="inline text-amber-400 mr-0.5 -mt-0.5" />
-                  <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{periodSummary.mayorships}</span>
-                  {" "}earned
-                </>
-              )}
-            </span>
-          ) : null}
-        </div>
+      <div className="space-y-2">
+        {/* row: summary left, pills right */}
+        <div className="flex items-center justify-between gap-4">
+          {/* left: summary */}
+          <div className="text-xs text-muted-foreground shrink-0">
+            {period === "all" && !activeRange ? (
+              <span>
+                <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{totalCheckins.toLocaleString()}</span>
+                {" "}check-ins
+                {allTimeAvgPerWeek !== null && (
+                  <>
+                    <span className="mx-1.5 text-border">·</span>
+                    <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">~{allTimeAvgPerWeek}</span>
+                    {" "}/wk
+                  </>
+                )}
+                {mayorshipsAllTime > 0 && (
+                  <>
+                    <span className="mx-1.5 text-border">·</span>
+                    <LuCrown size={10} className="inline text-amber-400 mr-0.5 -mt-0.5" />
+                    <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{mayorshipsAllTime}</span>
+                    {" "}earned
+                  </>
+                )}
+              </span>
+            ) : periodLoading ? (
+              <Skeleton className="h-3 w-32" />
+            ) : periodSummary ? (
+              <span>
+                <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{periodSummary.total.toLocaleString()}</span>
+                {" "}check-ins
+                <span className="mx-1.5 text-border">·</span>
+                <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">~{periodSummary.avgPerWeek}</span>
+                {" "}/wk
+                {periodSummary.mayorships > 0 && (
+                  <>
+                    <span className="mx-1.5 text-border">·</span>
+                    <LuCrown size={10} className="inline text-amber-400 mr-0.5 -mt-0.5" />
+                    <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{periodSummary.mayorships}</span>
+                    {" "}earned
+                  </>
+                )}
+              </span>
+            ) : null}
+          </div>
 
-        {/* right: pills */}
-        <div className="flex flex-wrap gap-1 items-center justify-end">
-          {pills.map((p) => (
+          {/* right: pills */}
+          <div className="flex flex-wrap gap-1 items-center justify-end">
+            {pills.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setShowCustomRange(false); setPeriod(period === p.key ? "all" : p.key); }}
+                className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+                  period === p.key && !activeRange
+                    ? "bg-foreground text-background font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+            {pastYears.length > 0 && (
+              <>
+                <span className="text-border text-xs">·</span>
+                {isPeriodYear && !activeRange && (
+                  <button
+                    onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setShowCustomRange(false); setPeriod("all"); }}
+                    className="text-[11px] px-2 py-0.5 rounded-full bg-foreground text-background font-medium transition-colors"
+                  >
+                    {period}
+                  </button>
+                )}
+                <div className="relative inline-flex items-center">
+                  <select
+                    value=""
+                    onChange={(e) => { if (e.target.value) { setRangeFrom(undefined); setRangeTo(undefined); setShowCustomRange(false); setPeriod(e.target.value); } }}
+                    className="text-[11px] px-2 py-0.5 pr-5 rounded-full appearance-none cursor-pointer transition-colors bg-transparent border-0 outline-none text-muted-foreground hover:text-foreground"
+                  >
+                    <option value="">by year</option>
+                    {[...pastYears].reverse().map((y) => (
+                      <option key={y} value={String(y)}>{y}</option>
+                    ))}
+                    <option value={String(currentYear)}>{currentYear}</option>
+                  </select>
+                  <LuChevronDown size={8} className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+                </div>
+              </>
+            )}
+            <span className="text-border text-xs">·</span>
             <button
-              key={p.key}
-              onClick={() => setPeriod(period === p.key ? "all" : p.key)}
+              onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setShowCustomRange(false); setPeriod("all"); }}
               className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-                period === p.key
+                period === "all" && !activeRange && !showCustomRange
                   ? "bg-foreground text-background font-medium"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {p.label}
+              all time
             </button>
-          ))}
-          {pastYears.length > 0 && (
-            <>
-              <span className="text-border text-xs">·</span>
-              {isPeriodYear && (
-                <button
-                  onClick={() => setPeriod("all")}
-                  className="text-[11px] px-2 py-0.5 rounded-full bg-foreground text-background font-medium transition-colors"
-                >
-                  {period}
-                </button>
-              )}
-              <div className="relative inline-flex items-center">
-                <select
-                  value=""
-                  onChange={(e) => { if (e.target.value) setPeriod(e.target.value); }}
-                  className="text-[11px] px-2 py-0.5 pr-5 rounded-full appearance-none cursor-pointer transition-colors bg-transparent border-0 outline-none text-muted-foreground hover:text-foreground"
-                >
-                  <option value="">by year</option>
-                  {[...pastYears].reverse().map((y) => (
-                    <option key={y} value={String(y)}>{y}</option>
-                  ))}
-                  <option value={String(currentYear)}>{currentYear}</option>
-                </select>
-                <LuChevronDown size={8} className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
-              </div>
-            </>
-          )}
-          <span className="text-border text-xs">·</span>
-          <button
-            onClick={() => setPeriod("all")}
-            className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-              period === "all"
-                ? "bg-foreground text-background font-medium"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            all time
-          </button>
+            <span className="text-border text-xs">·</span>
+            <button
+              onClick={() => { setPeriod("all"); setShowCustomRange((v) => !v); if (showCustomRange) { setRangeFrom(undefined); setRangeTo(undefined); } }}
+              className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+                showCustomRange || activeRange
+                  ? "bg-foreground text-background font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              custom
+            </button>
+          </div>
         </div>
+
+        {/* custom date range row — shown below when toggled */}
+        {(showCustomRange || activeRange) && (
+          <div className="flex items-center gap-2 justify-end">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className={`h-7 text-xs justify-start font-normal gap-1.5 ${!rangeFrom && !rangeTo && "text-muted-foreground"}`}>
+                  <LuCalendar size={11} />
+                  {rangeFrom ? (
+                    !rangeTo || format(rangeFrom, "yyyy-MM-dd") === format(rangeTo, "yyyy-MM-dd") ? (
+                      <>{format(rangeFrom, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "yyyy")}</span></>
+                    ) : (
+                      <>
+                        {format(rangeFrom, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "yyyy")}</span>
+                        <span className="mx-1 opacity-40">→</span>
+                        {format(rangeTo, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "yyyy")}</span>
+                      </>
+                    )
+                  ) : "select date or range"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="range"
+                  selected={{ from: rangeFrom, to: rangeTo }}
+                  onSelect={(r: DateRange | undefined) => { setRangeFrom(r?.from); setRangeTo(r?.to); }}
+                  initialFocus
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
+            {(rangeFrom || rangeTo) && (
+              <>
+                <span className="text-muted-foreground/30">·</span>
+                <button
+                  onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); }}
+                  className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                >
+                  clear
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* top venues + categories */}
@@ -440,7 +533,7 @@ export function StatsClient({
             </div>
             {periodLoading ? (
               <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
+                {Array.from({ length: 10 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <Skeleton className="h-3 w-3 rounded-full" />
                     <Skeleton className="h-3 flex-1" />
@@ -464,7 +557,7 @@ export function StatsClient({
             </div>
             {periodLoading ? (
               <div className="space-y-2">
-                {Array.from({ length: 5 }).map((_, i) => (
+                {Array.from({ length: 10 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <Skeleton className="h-3 w-3 rounded-full" />
                     <Skeleton className="h-3 flex-1" />
@@ -534,7 +627,7 @@ export function StatsClient({
               <LuCalendar size={13} className="text-muted-foreground" />
               <h2 className="text-sm font-medium">Check-ins by year</h2>
             </div>
-            <YearBarChart items={byYear.map((y) => ({ label: String(y.year), count: y.count }))} />
+            <YearBarChart items={byYear.map((y) => ({ label: String(y.year), count: y.count }))} foursquareByYear={foursquareByYear} />
           </div>
         ) : (
           <div className="border rounded-xl p-4 space-y-3">
