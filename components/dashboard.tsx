@@ -154,8 +154,9 @@ export function Dashboard({
   useEffect(() => {
     if (!foursquareConnected || !fromYear || yearCounts[fromYear] != null) return;
     setYearCountLoading(true);
-    const after = Math.floor(new Date(`${fromYear}-01-01`).getTime() / 1000);
-    const before = Math.floor(new Date(`${fromYear}-12-31T23:59:59`).getTime() / 1000);
+    const yr = parseInt(fromYear);
+    const after = Math.floor(Date.UTC(yr, 0, 1) / 1000);
+    const before = Math.floor(Date.UTC(yr + 1, 0, 1) / 1000);
     Promise.all([
       fetch(`/api/foursquare/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
       fetch(`/api/checkins/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
@@ -165,11 +166,12 @@ export function Dashboard({
   }, [fromYear, foursquareConnected]);
 
   useEffect(() => {
-    if (!foursquareConnected || !rangeFrom || !rangeTo) { setRangeCount(null); return; }
+    if (!foursquareConnected || !rangeFrom) { setRangeCount(null); return; }
+    const effectiveTo = rangeTo ?? rangeFrom;
     setRangeCount(null);
     setRangeCountLoading(true);
     const after = Math.floor(rangeFrom.getTime() / 1000);
-    const before = Math.floor(new Date(rangeTo.getFullYear(), rangeTo.getMonth(), rangeTo.getDate(), 23, 59, 59).getTime() / 1000);
+    const before = Math.floor(new Date(effectiveTo.getFullYear(), effectiveTo.getMonth(), effectiveTo.getDate(), 23, 59, 59).getTime() / 1000);
     Promise.all([
       fetch(`/api/foursquare/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
       fetch(`/api/checkins/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
@@ -279,7 +281,8 @@ export function Dashboard({
   }
 
   async function handleRangeSync() {
-    if (!rangeFrom || !rangeTo) return;
+    if (!rangeFrom) return;
+    const effectiveTo = rangeTo ?? rangeFrom;
     stopYearSyncRef.current = true;
     setRangeSyncState({ type: "loading" });
     setSyncState({ type: "idle" });
@@ -287,7 +290,7 @@ export function Dashboard({
     const startRes = await fetch("/api/sync/range", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: format(rangeFrom, "yyyy-MM-dd"), to: format(rangeTo, "yyyy-MM-dd") }),
+      body: JSON.stringify({ from: format(rangeFrom, "yyyy-MM-dd"), to: format(effectiveTo, "yyyy-MM-dd") }),
     });
     const startData = await startRes.json();
     if (!startData.jobId) {
@@ -329,14 +332,15 @@ export function Dashboard({
   }
 
   async function handleRangeDelete() {
-    if (!rangeFrom || !rangeTo) return;
+    if (!rangeFrom) return;
+    const effectiveTo = rangeTo ?? rangeFrom;
     setRangeDeleteLoading(true);
     setRangeDeleteResult(null);
     setRangeSyncState({ type: "idle" });
     const res = await fetch("/api/checkins/delete-range", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: format(rangeFrom, "yyyy-MM-dd"), to: format(rangeTo, "yyyy-MM-dd"), mode: "full" }),
+      body: JSON.stringify({ from: format(rangeFrom, "yyyy-MM-dd"), to: format(effectiveTo, "yyyy-MM-dd"), mode: "full" }),
     });
     const data = await res.json();
     setRangeDeleteResult({ deleted: data.deleted, errors: data.errors ?? 0 });
@@ -683,7 +687,7 @@ export function Dashboard({
           <Tabs defaultValue="count">
             <TabsList className="h-7">
               <TabsTrigger value="count" className="text-xs h-5 px-3 gap-1.5"><LuList size={11} />last (x) check-ins</TabsTrigger>
-              <TabsTrigger value="range" className="text-xs h-5 px-3 gap-1.5"><LuCalendarRange size={11} />range</TabsTrigger>
+              <TabsTrigger value="range" className="text-xs h-5 px-3 gap-1.5"><LuCalendarRange size={11} />date / range</TabsTrigger>
               <TabsTrigger value="year" className="text-xs h-5 px-3 gap-1.5"><LuCalendarDays size={11} />year</TabsTrigger>
             </TabsList>
 
@@ -811,6 +815,7 @@ export function Dashboard({
                             return <span className="flex items-center gap-1.5">
                               {foursquare != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><SiSwarm size={10} color="#ffa500" /><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{foursquare.toLocaleString()}</span> on swarm</span>}
                               {synced != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{synced.toLocaleString()}</span> synced</span>}
+                              <span className="text-[10px] text-muted-foreground/40" title="Swarm displays check-ins in local time — counts may differ by 1 at year boundaries.">±1 at boundaries</span>
                             </span>;
                           })() : null}
                         </div>
@@ -852,11 +857,15 @@ export function Dashboard({
                     <Button variant="outline" size="sm" className={`h-7 text-xs justify-start font-normal gap-1.5 ${!rangeFrom && !rangeTo && "text-muted-foreground"}`}>
                       <LuCalendar size={11} />
                       {rangeFrom || rangeTo ? (
-                        <>
-                          {rangeFrom ? <>{format(rangeFrom, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "yyyy")}</span></> : "start"}
-                          <span className="mx-1 opacity-40">→</span>
-                          {rangeTo ? <>{format(rangeTo, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "yyyy")}</span></> : "end"}
-                        </>
+                        !rangeTo ? (
+                          <>{format(rangeFrom!, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom!, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom!, "yyyy")}</span></>
+                        ) : (
+                          <>
+                            {rangeFrom ? <>{format(rangeFrom, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "yyyy")}</span></> : "start"}
+                            <span className="mx-1 opacity-40">→</span>
+                            <>{format(rangeTo, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "yyyy")}</span></>
+                          </>
+                        )
                       ) : "select range"}
                     </Button>
                   </PopoverTrigger>
@@ -882,13 +891,13 @@ export function Dashboard({
                     variant="outline"
                     className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors"
                     onClick={handleRangeSync}
-                    disabled={!rangeFrom || !rangeTo || rangeSyncState.type === "loading" || rangeSyncState.type === "running"}
+                    disabled={!rangeFrom || rangeSyncState.type === "loading" || rangeSyncState.type === "running"}
                   >
                     <LuRefreshCw size={11} />sync
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors" disabled={!rangeFrom || !rangeTo || rangeDeleteLoading}>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors" disabled={!rangeFrom || rangeDeleteLoading}>
                         <LuTrash2 size={11} />remove
                       </Button>
                     </AlertDialogTrigger>
@@ -896,7 +905,7 @@ export function Dashboard({
                       <AlertDialogHeader>
                         <AlertDialogTitle>Remove check-ins in range?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Permanently removes <strong>{rangeCount?.synced != null ? `${rangeCount.synced} synced` : "all synced"} calendar events</strong> and records from {rangeFrom ? format(rangeFrom, "MMM d, yyyy") : ""} to {rangeTo ? format(rangeTo, "MMM d, yyyy") : ""}. This action cannot be undone.
+                          Permanently removes <strong>{rangeCount?.synced != null ? `${rangeCount.synced} synced` : "all synced"} calendar events</strong> and records {rangeFrom && rangeTo && rangeTo.getTime() !== rangeFrom.getTime() ? <>from {format(rangeFrom, "MMM d, yyyy")} to {format(rangeTo, "MMM d, yyyy")}</> : rangeFrom ? <>on {format(rangeFrom, "MMM d, yyyy")}</> : ""}. This action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -908,7 +917,7 @@ export function Dashboard({
                 </div>
               </div>
               <div className="min-h-[1rem]">
-              {rangeFrom && rangeTo && (() => {
+              {rangeFrom && (() => {
                 const isActive = rangeSyncState.type !== "idle" || rangeDeleteLoading || !!rangeDeleteResult;
                 return (
                   <>

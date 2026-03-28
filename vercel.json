@@ -1,4 +1,6 @@
 {
+  "installCommand": "npm install --legacy-peer-deps",
+  "buildCommand": "[ -z \"$DIRECT_URL\" ] || prisma migrate deploy && next build",
   "crons": [
     {
       "path": "/api/sync/poll",

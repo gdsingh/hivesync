@@ -148,11 +148,11 @@ export function HistoryClient({ logs: initialLogs, lastSyncedAt }: Props) {
               title = "History Cleared";
               actionTag = null;
             } else if (log.type === "FULL") {
-              title = fromYear ? "Annual" : "Full";
+              title = fromYear ? "Yearly" : "Full";
               if (fromYear) subtitle = fromYear;
               actionTag = "sync";
             } else if (isYearlyRange) {
-              title = "Annual";
+              title = "Yearly";
               subtitle = log.fromDate!.slice(0, 4);
               actionTag = "sync";
             } else if (log.type === "RANGE") {
@@ -164,7 +164,7 @@ export function HistoryClient({ logs: initialLogs, lastSyncedAt }: Props) {
               title = `Last ${attempted} check-ins`;
               actionTag = "sync";
             } else if (isDeleteYearly) {
-              title = "Annual";
+              title = "Yearly";
               subtitle = log.fromDate!.slice(0, 4);
               actionTag = "delete";
             } else if (isDeleteRange) {

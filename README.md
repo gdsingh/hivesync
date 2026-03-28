@@ -11,11 +11,12 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 ### Features
 
 - **Connect** your Swarm and Google accounts via OAuth
-- **Auto-sync** — background polling creates calendar events daily via Vercel cron
-- **Full sync** — import your entire check-in history by year
-- **Date range sync** — sync or remove check-ins between any two dates
-- **Quick sync** — sync the last n check-ins on demand
-- **Delete / unsync** — remove calendar events by count, year, or date range; or just unlink records so they can be re-synced
+- **Sync** — multiple modes to keep your calendar up to date
+  - **Auto** — background polling creates calendar events daily via Vercel cron
+  - **Year** — import an entire year of check-in history
+  - **Date / range** — sync a single date or any date range
+  - **Quick** — sync the last n check-ins on demand
+- **Delete** — remove calendar events by count, year, or date range
 - **No duplicates** — every synced check-in is tracked so it's never created twice
 - **Dedicated calendar** — events go into a "Swarm" calendar in Google Calendar (with a bonus OG mode 😎), automatically colored to match the Swarm branding on creation.
 - **Rich events** — venue name, address, shout, friends, Foursquare scores, coins, and sticker bonuses
@@ -28,9 +29,9 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 
 ### Disclaimer ⚠️
 
-*I made this app for myself and figured I would share it out for anyone else looking for a similar workflow. Designed for self-hosted, single-user deployments. Each person deploys their own instance with their own API keys.* 
+*Designed for self-hosted, single-user deployments. Each person deploys their own instance with their own API keys.* 
 
-*Use at your own risk. If you have any requests or bugs, feel free to create an issue.*
+*I vibe-cdoded this app for myself so use at your own risk. If you have any requests or bugs, feel free to create an issue.*
 
 
 ## Deploy to Vercel
@@ -39,18 +40,18 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 
 ### First-time setup
 
-Because OAuth requires a known redirect URL, setup is a two-step process:
+1. Click the button above to deploy — the first build skips database migrations since no vars are set yet
+2. Visit your deployment URL — you'll be redirected to the setup wizard at `/setup`
+3. **Step 1 — Vercel token**: create a token at [vercel.com/account/tokens](https://vercel.com/account/tokens) with **no expiration**, paste it in, and validate
+4. **Step 2 — External services**:
+   - In the Vercel dashboard, go to **Storage → Create database → Neon** — this sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED` automatically. Copy `DATABASE_URL_UNPOOLED` into a new env var called `DIRECT_URL`, then paste both connection strings into the wizard
+   - If you have a custom domain, enter it — this sets `NEXTAUTH_URL` and updates the callback URLs shown below
+   - Create a Foursquare app at [foursquare.com/developers/apps](https://foursquare.com/developers/apps) and a Google OAuth client at [console.cloud.google.com](https://console.cloud.google.com/apis/credentials). Copy the callback URLs shown in the wizard into each service's redirect URI settings, then paste the client IDs and secrets back into the wizard
+   - Enter your Google email to lock the instance to your account
+5. **Step 3 — Apply**: all env vars are written to your Vercel project and a redeploy is triggered automatically
+6. After the redeploy completes, your app is ready — sign in with Google to get started
 
-1. Deploy via the button above
-2. In the Vercel dashboard, go to **Storage → Create database → Neon** — this auto-sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED`
-3. Copy `DATABASE_URL_UNPOOLED` into a new env var called `DIRECT_URL` (required for migrations)
-4. Set the build command to `prisma migrate deploy && next build` in Vercel project settings
-5. Set your deployment URL (e.g. `https://hivesync.vercel.app`) as `NEXTAUTH_URL`
-6. Set `ALLOWED_GOOGLE_EMAIL` to your Google email — this locks the instance to your account and must be set before your first login
-7. Generate and set secrets: `NEXTAUTH_SECRET`, `ENCRYPTION_KEY`, and `CRON_SECRET` — each via `openssl rand -base64 32`
-8. Add `https://your-vercel-url/api/auth/foursquare/callback` to your Foursquare app's redirect URIs
-9. Add `https://your-vercel-url/api/auth/google/callback` to your Google OAuth client's authorized redirect URIs
-10. Redeploy — your app is ready
+> The setup wizard self-disables once your instance is fully configured.
 
 
 ## Self-hosting
@@ -146,7 +147,7 @@ Hivesync automatically polls for new check-ins once per day using Vercel's built
 The home page provides three sync modes, each with sync and remove actions:
 
 - **Last n** — sync or remove the most recent n check-ins (max 250)
-- **Date range** — pick a start and end date to sync or remove check-ins within that window
+- **Date / range** — pick a single date or a date range to sync or remove check-ins within that window
 - **Year** — sync or remove all check-ins from a specific year; shows Foursquare count vs synced count with a visual sync progress bar
 
 ### Historical backfill

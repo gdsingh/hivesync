@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
   }
 
   const token = decrypt(config.foursquareToken);
+  const afterTs = parseInt(after);
+  const beforeTs = parseInt(before);
   let offset = 0;
   let total = 0;
 
@@ -38,8 +40,9 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await res.json();
-    const items: unknown[] = data?.response?.checkins?.items ?? [];
-    total += items.length;
+    const items: { createdAt: number }[] = data?.response?.checkins?.items ?? [];
+    const filtered = items.filter((c) => c.createdAt >= afterTs && c.createdAt < beforeTs);
+    total += filtered.length;
 
     if (items.length < LIMIT) break;
     offset += LIMIT;

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SetupWizard } from "./setup-wizard";
 
 const REQUIRED_VARS = [
   "NEXTAUTH_SECRET",
@@ -14,8 +15,12 @@ const REQUIRED_VARS = [
   "DIRECT_URL",
 ];
 
-export default function Home() {
-  if (process.env.NODE_ENV === "development") redirect("/home");
+export default function SetupPage() {
   const allSet = REQUIRED_VARS.every((v) => !!process.env[v]);
-  redirect(allSet ? "/home" : "/setup");
+  if (allSet) redirect("/home");
+
+  const appUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+  const isVercel = !!process.env.VERCEL_PROJECT_ID;
+
+  return <SetupWizard appUrl={appUrl} isVercel={isVercel} />;
 }

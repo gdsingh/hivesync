@@ -10,6 +10,8 @@ const PUBLIC_PREFIXES = [
   "/api/auth/foursquare/callback",
   "/api/health",
   "/api/sync/poll",
+  "/setup",
+  "/api/setup",
   "/_next",
   "/icon",
 ];
@@ -40,7 +42,7 @@ export async function proxy(request: NextRequest) {
   // Set-Cookie headers from route handler responses (e.g. oauth callback sets
   // the session cookie on a redirect). public routes have no inline scripts so
   // nonce-based CSP is unnecessary; next.config.mjs static headers cover them.
-  if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
+  if (pathname === "/" || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
