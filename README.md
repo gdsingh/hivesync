@@ -6,7 +6,7 @@
 
 Hivesync creates a Google Calendar event with the venue, location, friends, and any shouts after you check-in on Swarm. Runs in the background everyday, see the features list below for all it can do.
 
-*Interested in what it looks like, check out the [demo](https://hivesync.vercel.app).*
+*Interested in what it looks like? Check out the [demo](https://gdsingh.github.io/hivesync/).*
 
 ### Features
 
@@ -25,7 +25,8 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 - **Stickers page** — view all stickers you've earned from your check-ins
 - **Sync history** — log of past sync runs with timestamps and counts
 - **Mayor indicator** — venue name gets a 👑 crown when you were mayor at check-in time
-- **Optional Google Maps enrichment** — adds a verified address and maps link if you provide a Google Maps API key
+- **Optional Google Maps enrichment** — uses Places API (New) to add a verified Google Maps location, with venue-level caching, visible limits, and Foursquare fallback controls
+- **Sync count audit** — compares Swarm totals with synced calendar events year by year and flags any unaccounted check-ins
 
 ### Disclaimer ⚠️
 
@@ -97,7 +98,11 @@ Visit `http://localhost:3000`, sign in with Google, connect Foursquare, and star
 | `GOOGLE_CLIENT_SECRET` | yes | From Google Cloud OAuth credentials |
 | `DATABASE_URL` | yes (prod) | Pooled Postgres connection string (set automatically by Vercel Neon) |
 | `DIRECT_URL` | yes (prod) | Direct Postgres connection string — copy from `DATABASE_URL_UNPOOLED` |
-| `GOOGLE_MAPS_API_KEY` | no | Enables enriched addresses and Google Maps links on events |
+| `GOOGLE_MAPS_API_KEY` | no | Enables cached Google Places enrichment for event locations |
+| `GOOGLE_PLACES_DAILY_LIMIT` | no | App-level Google Places daily cap, defaults to `25` |
+| `GOOGLE_PLACES_MONTHLY_LIMIT` | no | App-level Google Places monthly cap, defaults to `500` |
+| `GOOGLE_PLACES_BACKFILL_RUN_LIMIT` | no | App-level Google Places cap per approved backfill, defaults to `250` |
+| `GOOGLE_PLACES_WARNING_THRESHOLD` | no | Usage warning threshold, defaults to `0.8` |
 
 ### Foursquare app setup
 
@@ -111,7 +116,26 @@ Visit `http://localhost:3000`, sign in with Google, connect Foursquare, and star
 2. Enable the **Google Calendar API**
 3. Go to **APIs & services → Credentials → Create OAuth client ID** (web application)
 4. Add `https://your-url/api/auth/google/callback` as an authorized redirect URI
-5. Optionally enable the **Places API** and create a separate API key for Google Maps enrichment
+5. Optionally enable the **Places API (New)** and create a separate, restricted API key for Google Maps enrichment
+
+### Google Maps enrichment and cost controls
+
+Google Maps enrichment is optional. If `GOOGLE_MAPS_API_KEY` is not set, Hivesync uses Foursquare venue location data for calendar events.
+
+When enabled, Hivesync uses **Places API (New)** `places:searchText` with a narrow field mask: `places.id`, `places.formattedAddress`, and `places.googleMapsUri`. It does not request Contact Data or Atmosphere Data fields.
+
+To reduce duplicate calls, Hivesync stores one Google mapping per Foursquare venue. Repeated check-ins at the same venue use the cached mapping and do not make another Google Places call. The connections dialog shows daily/monthly usage, lifetime calls, cache count, mapped venues, cache hits, and lookup results.
+
+Hivesync also has app-level caps before it calls Google:
+
+- Daily cap: `GOOGLE_PLACES_DAILY_LIMIT`, default `25`
+- Monthly cap: `GOOGLE_PLACES_MONTHLY_LIMIT`, default `500`
+- Manual backfill run cap: `GOOGLE_PLACES_BACKFILL_RUN_LIMIT`, default `250`
+- Warning threshold: `GOOGLE_PLACES_WARNING_THRESHOLD`, default `0.8`
+
+For manual year/date backfills, the app shows a preflight estimate before syncing: uncached venues, estimated Google Maps lookups, remaining allowance, and fallback count. You can set a per-run Google Maps API limit and choose whether to use Foursquare data after the limit is reached.
+
+These app limits are guardrails, not a replacement for Google Cloud controls. Restrict your API key, keep only the APIs you use enabled, set Google Cloud quotas, and add a billing budget/alert in Google Cloud.
 
 ## Database
 
@@ -134,7 +158,7 @@ Then set `DATABASE_URL=postgresql://postgres:password@localhost:5432/hivesync`.
 
 ## Background sync
 
-Hivesync automatically polls for new check-ins once per day using Vercel's built-in cron (free tier). The cron job is defined in `vercel.json` and runs at midnight UTC — no setup needed once deployed. The "last synced" indicator on the home page reflects both individual check-in syncs and cron job completions.
+Hivesync automatically polls for new check-ins once per day using Vercel's built-in cron (free tier). The cron job is defined in `vercel.json` and runs at 09:00 UTC — no setup needed once deployed. The "last synced" indicator on the home page reflects both individual check-in syncs and cron job completions.
 
 **Want more frequent sync?** Set up a free job on [cron-job.org](https://cron-job.org) pointing at:
 - URL: `POST https://your-app.vercel.app/api/sync/poll`
@@ -150,9 +174,13 @@ The home page provides three sync modes, each with sync and remove actions:
 - **Date / range** — pick a single date or a date range to sync or remove check-ins within that window
 - **Year** — sync or remove all check-ins from a specific year; shows Foursquare count vs synced count with a visual sync progress bar
 
+The year picker covers `2009` through the current year. As you check years, Hivesync saves a count audit comparing Swarm totals against synced calendar events. If every available year has been checked and a gap remains, the home page shows an `unaccounted check-ins` warning with a hover explanation.
+
 ### Historical backfill
 
-To import your full check-in history, use the yearly sync mode one year at a time rather than attempting everything at once. Each sync requires a per-check-in detail call to Foursquare, so large backlogs take time — a single year typically takes 3–6 minutes. Doing it year by year lets you take breaks, catch any errors early, and avoid keeping a browser tab open for hours. The daily cron handles all new check-ins going forward, so the backfill is a one-time task.
+To import your full check-in history, use the yearly sync mode one year at a time rather than attempting everything at once. Each sync requires per-check-in detail calls to Foursquare, so large backlogs take time — a single year typically takes 3–6 minutes. Doing it year by year lets you take breaks, catch any errors early, and avoid keeping a browser tab open for hours. The daily cron handles all new check-ins going forward, so the backfill is a one-time task.
+
+If Google Maps enrichment is enabled, backfills can also use Google Places calls for venues that are not already cached. Before a year or range sync starts, Hivesync estimates the uncached venues and asks for confirmation when the estimate exceeds the normal daily cap. For safer testing, set a low **Google Maps API limit** for the manual run. If **Use Foursquare Data** is enabled, Hivesync continues creating calendar events with Foursquare locations after the limit is reached; otherwise the sync stops at the limit.
 
 ## Check-ins page
 
@@ -165,17 +193,17 @@ Browse all synced check-ins at `/checkins` — a dot-style timeline grouped by d
 
 ## Sync history
 
-Every sync run is logged at `/history` — a timeline of past syncs with type, counts, and timestamps. Covers auto-syncs, manual syncs, date range and yearly syncs, deletes, and manual resyncs. The log can be cleared at any time without affecting synced check-ins.
+Every sync run is logged at `/history` — a timeline of past syncs with type, counts, and timestamps. Covers daily auto-syncs, manual syncs, date range and yearly syncs, deletes, and manual resyncs. The log can be cleared at any time without affecting synced check-ins.
 
 ## Event format
 
 Each calendar event looks like this:
 
 - **Title**: venue name (with 👑 if you were mayor)
-- **Location**: full address (+ Google Maps link if maps key is set)
+- **Location**: Google formatted address when enrichment is available; otherwise Foursquare venue location
 - **Duration**: 15 minutes from check-in time, in the venue's local timezone
 - **Description**:
-  
+
   ```
   💬 your shout here
   • Foursquare score message (+5)
@@ -184,6 +212,14 @@ Each calendar event looks like this:
   ❤️ liked by friend name
   https://foursquare.com/v/<venue-id>
   ```
+
+## Static demo
+
+The public demo is maintained in `apps/demo` and deployed to GitHub Pages:
+
+https://gdsingh.github.io/hivesync/
+
+The demo is a static Next.js export with sample data only. It does not include auth, API routes, database access, cron, or live Google/Foursquare calls. Vercel ignores `apps/demo` via `.vercelignore`, so deploying the main app from this repo only deploys the production app.
 
 ## Stack
 

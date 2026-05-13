@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { normalizeBaseUrl } from "@/lib/url";
 
 export async function GET(req: NextRequest) {
   const state = crypto.randomBytes(16).toString("hex");
-  const baseUrl = process.env.NEXTAUTH_URL ?? req.nextUrl.origin;
+  const baseUrl = normalizeBaseUrl(process.env.NEXTAUTH_URL, req.nextUrl.origin);
 
   const params = new URLSearchParams({
     client_id: process.env.FOURSQUARE_CLIENT_ID ?? "",

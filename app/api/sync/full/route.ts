@@ -8,12 +8,20 @@ import {
   fetchCheckins,
   syncCheckins,
 } from "@/lib/sync";
+import { getGooglePlacesLimits } from "@/lib/google-places";
 
 const CHUNK_SIZE = 15;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const fromYearRaw = body.fromYear;
+  const googlePlacesApproved = body.googlePlacesApproved === true;
+  const googlePlacesLimits = await getGooglePlacesLimits();
+  const googlePlacesRunLimit =
+    typeof body.googlePlacesRunLimit === "number" && Number.isInteger(body.googlePlacesRunLimit) && body.googlePlacesRunLimit >= 0
+      ? Math.min(body.googlePlacesRunLimit, googlePlacesLimits.monthlyLimit)
+      : (googlePlacesApproved ? googlePlacesLimits.backfillRunLimit : googlePlacesLimits.dailyLimit);
+  const googlePlacesAllowFallback = body.googlePlacesAllowFallback !== false;
   const fromYear: number | undefined =
     typeof fromYearRaw === "number" && Number.isInteger(fromYearRaw) && fromYearRaw >= 2000 && fromYearRaw <= new Date().getFullYear()
       ? fromYearRaw
@@ -45,9 +53,13 @@ export async function POST(req: NextRequest) {
   const job = await db.syncJob.create({
     data: {
       status: "RUNNING",
+      jobType: "FULL",
       afterTimestamp: afterTimestamp ?? null,
       beforeTimestamp: beforeTimestamp ?? null,
       currentOffset: 0,
+      googlePlacesApproved,
+      googlePlacesRunLimit,
+      googlePlacesAllowFallback,
     },
   });
 
@@ -70,7 +82,10 @@ export async function POST(req: NextRequest) {
     (beforeTimestamp === undefined || c.createdAt < beforeTimestamp)
   );
 
-  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);
+  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken, {
+    mode: "backfill",
+    jobId: job.id,
+  });
 
   const newOffset = CHUNK_SIZE;
   const isDone = newOffset >= total || items.length < CHUNK_SIZE;

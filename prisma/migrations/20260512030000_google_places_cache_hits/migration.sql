@@ -1,0 +1,6 @@
+ALTER TABLE "venue_enrichments"
+ADD COLUMN "cacheHits" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "lastCacheHitAt" TIMESTAMP(3);
+
+ALTER TABLE "google_places_usage"
+ADD COLUMN "cacheHits" INTEGER NOT NULL DEFAULT 0;

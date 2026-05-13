@@ -7,6 +7,7 @@ import {
   ensureSwarmCalendar,
   fetchCheckins,
   syncCheckins,
+  type FoursquareCheckin,
 } from "@/lib/sync";
 
 const CHUNK_SIZE = 15;
@@ -33,6 +34,23 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const claimedOffset = job.currentOffset;
+  const claimed = await db.syncJob.updateMany({
+    where: { id: jobId, status: "RUNNING", currentOffset: claimedOffset },
+    data: { currentOffset: claimedOffset + CHUNK_SIZE },
+  });
+  if (claimed.count === 0) {
+    const latest = await db.syncJob.findUnique({ where: { id: jobId } });
+    return NextResponse.json({
+      jobId: job.id,
+      status: latest?.status.toLowerCase() ?? "running",
+      totalSynced: latest?.totalSynced ?? job.totalSynced,
+      totalSkipped: latest?.totalSkipped ?? job.totalSkipped,
+      totalErrors: latest?.totalErrors ?? job.totalErrors,
+      currentOffset: latest?.currentOffset ?? job.currentOffset,
+    });
+  }
+
   const userConfig = await db.userConfig.findUnique({ where: { id: 1 } });
   if (!userConfig?.foursquareToken) {
     await db.syncJob.update({
@@ -47,35 +65,68 @@ export async function POST(req: NextRequest) {
   const calendarService = google.calendar({ version: "v3", auth });
   const calendarId = await ensureSwarmCalendar(calendarService);
 
-  const { items: rawItems, total } = await fetchCheckins(
-    foursquareToken,
-    job.currentOffset,
-    job.afterTimestamp ?? undefined,
-    CHUNK_SIZE,
-    job.beforeTimestamp ?? undefined
-  );
+  const rangeCheckins = Array.isArray(job.rangeCheckins)
+    ? (job.rangeCheckins as unknown as FoursquareCheckin[])
+    : null;
+  let total: number;
+  let items: FoursquareCheckin[];
 
-  // post-fetch filter: foursquare's timestamp params are not always strictly exclusive
-  const after = job.afterTimestamp ?? undefined;
-  const before = job.beforeTimestamp ?? undefined;
-  const items = rawItems.filter((c) =>
-    (after === undefined || c.createdAt >= after) &&
-    (before === undefined || c.createdAt < before)
-  );
+  if (job.jobType === "RANGE") {
+    if (!rangeCheckins) {
+      await db.syncJob.update({
+        where: { id: jobId },
+        data: {
+          status: "FAILED",
+          errorMessage: "range sync window unavailable; restart this range sync",
+          completedAt: new Date(),
+        },
+      });
+      return NextResponse.json({
+        jobId: job.id,
+        status: "failed",
+        errorMessage: "range sync window unavailable; restart this range sync",
+        totalSynced: job.totalSynced,
+        totalSkipped: job.totalSkipped,
+        totalErrors: job.totalErrors,
+      });
+    }
 
-  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);
+    total = rangeCheckins.length;
+    items = rangeCheckins.slice(claimedOffset, claimedOffset + CHUNK_SIZE);
+  } else {
+    const { items: rawItems, total: apiTotal } = await fetchCheckins(
+      foursquareToken,
+      claimedOffset,
+      job.afterTimestamp ?? undefined,
+      CHUNK_SIZE,
+      job.beforeTimestamp ?? undefined
+    );
 
-  const newOffset = job.currentOffset + CHUNK_SIZE;
+    // post-fetch filter: foursquare's timestamp params are not always strictly exclusive
+    const after = job.afterTimestamp ?? undefined;
+    const before = job.beforeTimestamp ?? undefined;
+    total = apiTotal;
+    items = rawItems.filter((c) =>
+      (after === undefined || c.createdAt >= after) &&
+      (before === undefined || c.createdAt < before)
+    );
+  }
+
+  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken, {
+    mode: "backfill",
+    jobId: job.id,
+  });
+
+  const newOffset = claimedOffset + CHUNK_SIZE;
   const isDone = newOffset >= total || items.length < CHUNK_SIZE;
 
   const updated = await db.syncJob.update({
     where: { id: jobId },
     data: {
       status: isDone ? "COMPLETED" : "RUNNING",
-      currentOffset: newOffset,
-      totalSynced: job.totalSynced + result.synced,
-      totalSkipped: job.totalSkipped + result.skipped,
-      totalErrors: job.totalErrors + result.errors,
+      totalSynced: { increment: result.synced },
+      totalSkipped: { increment: result.skipped },
+      totalErrors: { increment: result.errors },
       completedAt: isDone ? new Date() : null,
     },
   });
@@ -84,7 +135,7 @@ export async function POST(req: NextRequest) {
     const fromDate = job.afterTimestamp ? new Date(job.afterTimestamp * 1000).toISOString().slice(0, 10) : undefined;
     const toDate = job.beforeTimestamp ? new Date(job.beforeTimestamp * 1000).toISOString().slice(0, 10) : undefined;
     await db.syncLog.create({
-      data: { type: "FULL", synced: updated.totalSynced, skipped: updated.totalSkipped, errors: updated.totalErrors, fromDate, toDate },
+      data: { type: job.jobType === "RANGE" ? "RANGE" : "FULL", synced: updated.totalSynced, skipped: updated.totalSkipped, errors: updated.totalErrors, fromDate, toDate },
     });
   }
 

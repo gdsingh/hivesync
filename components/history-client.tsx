@@ -183,6 +183,10 @@ export function HistoryClient({ logs: initialLogs, lastSyncedAt }: Props) {
             } else if (log.type === "RESYNC") {
               title = "Manual";
               actionTag = "resync";
+            } else if (log.type === "POLL") {
+              title = "Daily auto-sync";
+              subtitle = "last 24 hours";
+              actionTag = "sync";
             } else {
               title = "Scheduled";
               actionTag = "sync";
@@ -232,6 +236,11 @@ export function HistoryClient({ logs: initialLogs, lastSyncedAt }: Props) {
                           {log.type !== "DELETE" && log.skipped > 0 && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[11px] font-[family-name:var(--font-geist-mono)]">
                               {log.skipped} skipped
+                            </span>
+                          )}
+                          {log.type === "POLL" && log.synced === 0 && log.skipped === 0 && log.errors === 0 && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground text-[11px] font-[family-name:var(--font-geist-mono)]">
+                              no new check-ins
                             </span>
                           )}
                           {hasError && (

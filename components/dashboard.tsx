@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { SiSwarm, SiGithub } from "react-icons/si";
+import { SiSwarm, SiGithub, SiGooglemaps } from "react-icons/si";
 import { FaFoursquare } from "react-icons/fa";
-import { LuCrown, LuChevronDown, LuX, LuCalendarDays, LuRefreshCw, LuTrash2, LuCalendarRange, LuCalendar, LuCalendarPlus, LuGithub, LuPlug, LuList } from "react-icons/lu";
+import { LuCrown, LuChevronDown, LuX, LuCalendarDays, LuRefreshCw, LuTrash2, LuCalendarRange, LuCalendar, LuCalendarPlus, LuGithub, LuPlug, LuList, LuMapPin, LuInfo } from "react-icons/lu";
 import { AppHeader } from "@/components/app-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,7 @@ interface Props {
   ogMode: boolean;
   lastSyncedAt: Date | null;
   isPreview?: boolean;
+  previewFoursquareTotal?: number;
 }
 
 type SyncState =
@@ -58,8 +59,65 @@ type SyncState =
   | { type: "done"; synced: number; skipped: number; errors: number }
   | { type: "error"; message: string };
 
+type GooglePlacesStatus = {
+  hasKey: boolean;
+  dailyLimit: number;
+  monthlyLimit: number;
+  backfillRunLimit: number;
+  warningThreshold: number;
+  todayCalls: number;
+  monthCalls: number;
+  totalCalls: number;
+  todayCacheHits: number;
+  monthCacheHits: number;
+  totalCacheHits: number;
+  cacheCount: number;
+  mappedVenueCount: number;
+  lookupStatusCounts: Record<string, number>;
+  limitsOverridden: boolean;
+  status: "no_key" | "enabled" | "near_limit" | "capped" | "error";
+};
+
+type GooglePlacesPreflight = {
+  estimatedGoogleCalls: number;
+  uniqueUncachedVenues: number;
+  dailyRemaining: number;
+  monthlyRemaining: number;
+  backfillRemaining: number;
+  fallbackCount: number;
+  confirmationRequired: boolean;
+};
+
+type PendingGooglePlacesSync =
+  | { type: "year"; year: string }
+  | { type: "range"; from: Date; to?: Date };
+
+type SyncCountAudit = {
+  firstYear: number;
+  lastYear: number;
+  checkedYears: Record<string, { foursquare: number; synced: number }>;
+  totalCheckins: number | null;
+  totalSynced: number;
+  foundInCheckedYears: number;
+  unaccountedCheckins: number | null;
+  completed: boolean;
+  checkedAt: string | Date;
+};
+
 const currentYear = new Date().getFullYear();
-const years = Array.from({ length: 15 }, (_, i) => currentYear - 14 + i);
+const FIRST_FOURSQUARE_YEAR = 2009;
+const years = Array.from({ length: currentYear - FIRST_FOURSQUARE_YEAR + 1 }, (_, i) => FIRST_FOURSQUARE_YEAR + i);
+
+function getRangeTimestamps(fromDate: Date, toDate?: Date) {
+  const effectiveTo = toDate ?? fromDate;
+  const start = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  const end = new Date(effectiveTo.getFullYear(), effectiveTo.getMonth(), effectiveTo.getDate() + 1);
+
+  return {
+    afterTimestamp: Math.floor(start.getTime() / 1000),
+    beforeTimestamp: Math.floor(end.getTime() / 1000),
+  };
+}
 
 
 export function Dashboard({
@@ -73,6 +131,7 @@ export function Dashboard({
   ogMode: initialOgMode,
   lastSyncedAt,
   isPreview = false,
+  previewFoursquareTotal,
 }: Props) {
   const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -94,10 +153,10 @@ export function Dashboard({
 
   const [calendarSetupLoading, setCalendarSetupLoading] = useState(false);
   const [foursquareStats, setFoursquareStats] = useState<{ totalCheckins: number | null } | null>(
-    isPreview ? { totalCheckins: 3241 } : null
+    isPreview ? { totalCheckins: previewFoursquareTotal ?? 3241 } : null
   );
   const [ogMode, setOgMode] = useState(initialOgMode);
-  const [syncOpen, setSyncOpen] = useState(() => typeof window !== "undefined" && window.location.hash === "#manual-sync");
+  const [syncOpen, setSyncOpen] = useState(false);
   const [pendingDisconnect, setPendingDisconnect] = useState(false);
   const [foursquareDisconnected, setFoursquareDisconnected] = useState(false);
   const [rangeFrom, setRangeFrom] = useState<Date | undefined>(undefined);
@@ -109,9 +168,51 @@ export function Dashboard({
   const [yearCountLoading, setYearCountLoading] = useState(false);
   const [rangeCount, setRangeCount] = useState<{ foursquare?: number; synced?: number } | null>(null);
   const [rangeCountLoading, setRangeCountLoading] = useState(false);
+  const [syncCountAudit, setSyncCountAudit] = useState<SyncCountAudit | null>(null);
+  const [googlePlacesStatus, setGooglePlacesStatus] = useState<GooglePlacesStatus | null>(null);
+  const [googlePlacesPreflight, setGooglePlacesPreflight] = useState<GooglePlacesPreflight | null>(null);
+  const [googlePlacesPreflightLoading, setGooglePlacesPreflightLoading] = useState(false);
+  const [pendingGooglePlacesSync, setPendingGooglePlacesSync] = useState<PendingGooglePlacesSync | null>(null);
+  const [manualGooglePlacesLimit, setManualGooglePlacesLimit] = useState<number | "">("");
+  const [manualGooglePlacesAllowFallback, setManualGooglePlacesAllowFallback] = useState(false);
+  const [googlePlacesLimitDraft, setGooglePlacesLimitDraft] = useState({
+    dailyLimit: "",
+    monthlyLimit: "",
+    backfillRunLimit: "",
+  });
+  const [googlePlacesLimitSaving, setGooglePlacesLimitSaving] = useState(false);
+  const [googlePlacesLimitError, setGooglePlacesLimitError] = useState<string | null>(null);
   const stopYearSyncRef = useRef(false);
   const stopRangeSyncRef = useRef(false);
   const quickSyncAbortRef = useRef<AbortController | null>(null);
+  const allTimeMissing =
+    foursquareStats?.totalCheckins != null
+      ? Math.max(0, foursquareStats.totalCheckins - totalSynced)
+      : null;
+  const loadedYearGap = Object.values(yearCounts).reduce((sum, counts) => {
+    if (counts.foursquare == null || counts.synced == null) return sum;
+    return sum + Math.max(0, counts.foursquare - counts.synced);
+  }, 0);
+  const loadedYearCount = Object.keys(yearCounts).length;
+  const unscannedGap =
+    allTimeMissing == null
+      ? null
+      : Math.max(0, allTimeMissing - loadedYearGap);
+  const hasCheckedYearGap = loadedYearCount > 0 && allTimeMissing != null;
+  const currentAuditMatches =
+    syncCountAudit?.totalSynced === totalSynced &&
+    (foursquareStats?.totalCheckins == null || syncCountAudit.totalCheckins === foursquareStats.totalCheckins);
+  const persistedUnaccounted =
+    syncCountAudit?.completed && currentAuditMatches && syncCountAudit.unaccountedCheckins != null
+      ? syncCountAudit.unaccountedCheckins
+      : null;
+  const sessionUnaccounted =
+    loadedYearCount >= years.length &&
+    unscannedGap != null &&
+    unscannedGap > 0
+      ? unscannedGap
+      : null;
+  const visibleUnaccounted = sessionUnaccounted ?? (persistedUnaccounted != null && persistedUnaccounted > 0 ? persistedUnaccounted : null);
 
   useEffect(() => {
     if (isPreview || !foursquareConnected) return;
@@ -120,6 +221,64 @@ export function Dashboard({
       .then((d) => setFoursquareStats(d))
       .catch(() => {});
   }, [isPreview, foursquareConnected]);
+
+  useEffect(() => {
+    if (isPreview) return;
+    fetch("/api/sync-count-audit")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.audit) return;
+        setSyncCountAudit(d.audit);
+        setYearCounts(d.audit.checkedYears ?? {});
+      })
+      .catch(() => {});
+  }, [isPreview]);
+
+  useEffect(() => {
+    if (window.location.hash === "#manual-sync") setSyncOpen(true);
+  }, []);
+
+  async function saveSyncCountAudit(year: string, foursquare?: number, synced?: number) {
+    if (isPreview || foursquare == null || synced == null) return;
+    const res = await fetch("/api/sync-count-audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        year: parseInt(year),
+        foursquare,
+        synced,
+        totalCheckins: foursquareStats?.totalCheckins,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.audit) setSyncCountAudit(data.audit);
+  }
+
+  async function refreshGooglePlacesStatus() {
+    if (isPreview) return;
+    fetch("/api/google-places/status")
+      .then((r) => r.json())
+      .then((d) => setGooglePlacesStatus(d))
+      .catch(() => setGooglePlacesStatus({ status: "error" } as GooglePlacesStatus));
+  }
+
+  useEffect(() => {
+    refreshGooglePlacesStatus();
+  }, [isPreview]);
+
+  useEffect(() => {
+    if (!googlePlacesStatus || googlePlacesStatus.status === "error") return;
+    setGooglePlacesLimitDraft({
+      dailyLimit: String(googlePlacesStatus.dailyLimit),
+      monthlyLimit: String(googlePlacesStatus.monthlyLimit),
+      backfillRunLimit: String(googlePlacesStatus.backfillRunLimit),
+    });
+  }, [
+    googlePlacesStatus?.dailyLimit,
+    googlePlacesStatus?.monthlyLimit,
+    googlePlacesStatus?.backfillRunLimit,
+    googlePlacesStatus?.status,
+  ]);
 
   useEffect(() => {
     if (isPreview || !googleConnected) return;
@@ -162,16 +321,15 @@ export function Dashboard({
       fetch(`/api/checkins/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
     ]).then(([fsq, db]) => {
       setYearCounts((prev) => ({ ...prev, [fromYear]: { foursquare: fsq.count, synced: db.count } }));
+      saveSyncCountAudit(fromYear, fsq.count, db.count);
     }).finally(() => setYearCountLoading(false));
   }, [fromYear, foursquareConnected]);
 
   useEffect(() => {
     if (!foursquareConnected || !rangeFrom) { setRangeCount(null); return; }
-    const effectiveTo = rangeTo ?? rangeFrom;
     setRangeCount(null);
     setRangeCountLoading(true);
-    const after = Math.floor(rangeFrom.getTime() / 1000);
-    const before = Math.floor(new Date(effectiveTo.getFullYear(), effectiveTo.getMonth(), effectiveTo.getDate(), 23, 59, 59).getTime() / 1000);
+    const { afterTimestamp: after, beforeTimestamp: before } = getRangeTimestamps(rangeFrom, rangeTo);
     Promise.all([
       fetch(`/api/foursquare/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
       fetch(`/api/checkins/count?after=${after}&before=${before}`).then((r) => r.json()).catch(() => ({})),
@@ -233,6 +391,7 @@ export function Dashboard({
         setQuickError(data.error ?? "sync failed");
       } else {
         setQuickResult({ synced: data.synced, skipped: data.skipped });
+        refreshGooglePlacesStatus();
         router.refresh();
       }
     } catch (err) {
@@ -280,9 +439,67 @@ export function Dashboard({
     router.refresh();
   }
 
-  async function handleRangeSync() {
-    if (!rangeFrom) return;
-    const effectiveTo = rangeTo ?? rangeFrom;
+  function getManualGooglePlacesLimit(): number {
+    return manualGooglePlacesLimit === ""
+      ? (googlePlacesStatus?.backfillRunLimit ?? 250)
+      : manualGooglePlacesLimit;
+  }
+
+  async function saveGooglePlacesLimits() {
+    setGooglePlacesLimitSaving(true);
+    setGooglePlacesLimitError(null);
+    try {
+      const dailyLimit = parseInt(googlePlacesLimitDraft.dailyLimit, 10);
+      const monthlyLimit = parseInt(googlePlacesLimitDraft.monthlyLimit, 10);
+      const backfillRunLimit = parseInt(googlePlacesLimitDraft.backfillRunLimit, 10);
+
+      const res = await fetch("/api/google-places/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dailyLimit, monthlyLimit, backfillRunLimit }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setGooglePlacesLimitError(data.error ?? "could not update limits");
+        return;
+      }
+      setGooglePlacesStatus(data);
+      setGooglePlacesPreflight(null);
+    } catch {
+      setGooglePlacesLimitError("could not reach the server");
+    } finally {
+      setGooglePlacesLimitSaving(false);
+    }
+  }
+
+  async function runGooglePlacesPreflight(afterTimestamp: number, beforeTimestamp: number): Promise<GooglePlacesPreflight | null> {
+    setGooglePlacesPreflightLoading(true);
+    setGooglePlacesPreflight(null);
+    try {
+      const res = await fetch("/api/google-places/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          afterTimestamp,
+          beforeTimestamp,
+          googlePlacesRunLimit: getManualGooglePlacesLimit(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) return null;
+      setGooglePlacesPreflight(data);
+      setGooglePlacesStatus(data.usage ?? null);
+      return data;
+    } catch {
+      return null;
+    } finally {
+      setGooglePlacesPreflightLoading(false);
+    }
+  }
+
+  async function startRangeSync(googlePlacesApproved: boolean, fromDate: Date, toDate?: Date) {
+    const effectiveTo = toDate ?? fromDate;
+    const { afterTimestamp, beforeTimestamp } = getRangeTimestamps(fromDate, toDate);
     stopYearSyncRef.current = true;
     setRangeSyncState({ type: "loading" });
     setSyncState({ type: "idle" });
@@ -290,16 +507,43 @@ export function Dashboard({
     const startRes = await fetch("/api/sync/range", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: format(rangeFrom, "yyyy-MM-dd"), to: format(effectiveTo, "yyyy-MM-dd") }),
+      body: JSON.stringify({
+        from: format(fromDate, "yyyy-MM-dd"),
+        to: format(effectiveTo, "yyyy-MM-dd"),
+        afterTimestamp,
+        beforeTimestamp,
+        expectedCheckins: rangeCount?.foursquare,
+        googlePlacesApproved,
+        googlePlacesRunLimit: getManualGooglePlacesLimit(),
+        googlePlacesAllowFallback: manualGooglePlacesAllowFallback,
+      }),
     });
     const startData = await startRes.json();
     if (!startData.jobId) {
       setRangeSyncState({ type: "error", message: startData.error ?? "failed to start sync" });
       return;
     }
+    if (
+      rangeCount?.foursquare != null &&
+      typeof startData.total === "number" &&
+      startData.total > rangeCount.foursquare + 5
+    ) {
+      await fetch("/api/sync/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: startData.jobId }),
+      });
+      setRangeSyncState({
+        type: "error",
+        message: `range mismatch: expected about ${rangeCount.foursquare} check-ins, found ${startData.total}; stopped before continuing`,
+      });
+      refreshGooglePlacesStatus();
+      return;
+    }
     setRangeSyncState({ type: "running", jobId: startData.jobId, synced: startData.totalSynced, skipped: startData.totalSkipped, total: startData.total ?? 0, errors: startData.totalErrors ?? 0 });
     if (startData.status === "completed") {
       setRangeSyncState({ type: "done", synced: startData.totalSynced, skipped: startData.totalSkipped, errors: startData.totalErrors });
+      refreshGooglePlacesStatus();
       router.refresh();
       return;
     }
@@ -315,6 +559,7 @@ export function Dashboard({
         setRangeSyncState(job.status === "completed"
           ? { type: "done", synced: job.totalSynced, skipped: job.totalSkipped, errors: job.totalErrors }
           : { type: "error", message: job.errorMessage ?? "sync failed" });
+        refreshGooglePlacesStatus();
         router.refresh();
         return;
       }
@@ -325,10 +570,22 @@ export function Dashboard({
         setRangeSyncState(cont.status === "completed"
           ? { type: "done", synced: cont.totalSynced, skipped: cont.totalSkipped, errors: cont.totalErrors }
           : { type: "error", message: "sync failed" });
+        refreshGooglePlacesStatus();
         router.refresh();
         return;
       }
     }
+  }
+
+  async function handleRangeSync() {
+    if (!rangeFrom) return;
+    const { afterTimestamp, beforeTimestamp } = getRangeTimestamps(rangeFrom, rangeTo);
+    const preflight = await runGooglePlacesPreflight(afterTimestamp, beforeTimestamp);
+    if (preflight?.confirmationRequired) {
+      setPendingGooglePlacesSync({ type: "range", from: rangeFrom, to: rangeTo });
+      return;
+    }
+    await startRangeSync(false, rangeFrom, rangeTo);
   }
 
   async function handleRangeDelete() {
@@ -364,7 +621,7 @@ export function Dashboard({
     setRangeSyncState({ type: "idle" });
   }
 
-  async function handleFullSync() {
+  async function startFullSync(googlePlacesApproved: boolean, yearValue: string) {
     stopRangeSyncRef.current = true;
     setSyncState({ type: "loading" });
     setRangeSyncState({ type: "idle" });
@@ -372,7 +629,12 @@ export function Dashboard({
     const startRes = await fetch("/api/sync/full", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fromYear: parseInt(fromYear) }),
+      body: JSON.stringify({
+        fromYear: parseInt(yearValue),
+        googlePlacesApproved,
+        googlePlacesRunLimit: getManualGooglePlacesLimit(),
+        googlePlacesAllowFallback: manualGooglePlacesAllowFallback,
+      }),
     });
     const startData = await startRes.json();
     if (!startData.jobId) {
@@ -396,12 +658,36 @@ export function Dashboard({
         skipped: startData.totalSkipped,
         errors: startData.totalErrors,
       });
+      refreshGooglePlacesStatus();
       router.refresh();
       return;
     }
 
     // poll until done
     await pollSync(startData.jobId);
+  }
+
+  async function handleFullSync() {
+    const yr = parseInt(fromYear);
+    const afterTimestamp = Math.floor(Date.UTC(yr, 0, 1) / 1000);
+    const beforeTimestamp = Math.floor(Date.UTC(yr + 1, 0, 1) / 1000);
+    const preflight = await runGooglePlacesPreflight(afterTimestamp, beforeTimestamp);
+    if (preflight?.confirmationRequired) {
+      setPendingGooglePlacesSync({ type: "year", year: fromYear });
+      return;
+    }
+    await startFullSync(false, fromYear);
+  }
+
+  async function confirmGooglePlacesSync() {
+    const pending = pendingGooglePlacesSync;
+    setPendingGooglePlacesSync(null);
+    if (!pending) return;
+    if (pending.type === "year") {
+      await startFullSync(true, pending.year);
+    } else {
+      await startRangeSync(true, pending.from, pending.to);
+    }
   }
 
   async function pollSync(jobId: string) {
@@ -419,6 +705,7 @@ export function Dashboard({
             ? { type: "done", synced: job.totalSynced, skipped: job.totalSkipped, errors: job.totalErrors }
             : { type: "error", message: job.errorMessage ?? "sync failed" }
         );
+        refreshGooglePlacesStatus();
         router.refresh();
         return;
       }
@@ -439,6 +726,7 @@ export function Dashboard({
         setSyncState(cont.status === "completed"
           ? { type: "done", synced: cont.totalSynced, skipped: cont.totalSkipped, errors: cont.totalErrors }
           : { type: "error", message: "sync failed" });
+        refreshGooglePlacesStatus();
         router.refresh();
         return;
       }
@@ -482,7 +770,7 @@ export function Dashboard({
                   <div className="mt-2">
                     <div className="space-y-2">
                       {/* foursquare */}
-                      <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
+	                      <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <FaFoursquare size={15} className="text-[#f94877] shrink-0" />
                           <div className="min-w-0">
@@ -514,44 +802,180 @@ export function Dashboard({
                       </div>
 
                       {/* google */}
-                      <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" className="shrink-0">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                          </svg>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-medium leading-none">google</p>
-                              {googleConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />}
-                            </div>
-                            {googleEmail && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{googleEmail}</p>}
-                          </div>
-                        </div>
-                        <HoverCard openDelay={200}>
-                          <HoverCardTrigger asChild>
-                            <button disabled className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground opacity-50 cursor-default shrink-0">disconnect</button>
-                          </HoverCardTrigger>
-                          <HoverCardContent align="end" className="w-56 text-xs text-muted-foreground">
-                            To revoke access, remove this app from your Google account under Security → Third-party apps.
-                          </HoverCardContent>
-                        </HoverCard>
-                      </div>
-                    </div>
+	                      <div className="rounded-lg border px-3 py-2.5 space-y-3">
+	                        <div className="flex items-center justify-between gap-3">
+	                          <div className="flex items-center gap-2.5 min-w-0">
+	                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" className="shrink-0">
+	                              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+	                              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+	                              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+	                              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+	                            </svg>
+	                            <div className="min-w-0">
+	                              <div className="flex items-center gap-1.5">
+	                                <p className="text-xs font-medium leading-none">google</p>
+	                                {googleConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />}
+	                              </div>
+	                              {googleEmail && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{googleEmail}</p>}
+	                            </div>
+	                          </div>
+	                          <HoverCard openDelay={200}>
+	                            <HoverCardTrigger asChild>
+	                              <button disabled className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground opacity-50 cursor-default shrink-0">disconnect</button>
+	                            </HoverCardTrigger>
+	                            <HoverCardContent align="end" className="w-56 text-xs text-muted-foreground">
+	                              To revoke access, remove this app from your Google account under Security → Third-party apps.
+	                            </HoverCardContent>
+	                          </HoverCard>
+	                        </div>
+	                        <div className="border-t pt-2 space-y-2">
+	                          <div className="flex items-center justify-between gap-2">
+	                            <div className="flex items-center gap-2 min-w-0">
+	                              <LuMapPin size={14} className="text-muted-foreground shrink-0" />
+	                              <div>
+	                                <p className="text-xs font-medium leading-none">maps enrichment</p>
+	                                <p className="text-[11px] text-muted-foreground mt-0.5">
+	                                  {googlePlacesStatus?.status === "no_key" ? "no api key configured" : googlePlacesStatus?.status === "capped" ? "capped for now" : googlePlacesStatus?.status === "near_limit" ? "near limit" : googlePlacesStatus?.status === "error" ? "could not load usage" : "enabled"}
+	                                </p>
+	                              </div>
+	                            </div>
+	                            {googlePlacesStatus && googlePlacesStatus.status !== "error" && (
+	                              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${googlePlacesStatus.status === "capped" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : googlePlacesStatus.status === "near_limit" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}>
+	                                {googlePlacesStatus.status === "no_key" ? "off" : googlePlacesStatus.status === "capped" ? "capped" : googlePlacesStatus.status === "near_limit" ? "watch" : "on"}
+	                              </span>
+	                            )}
+	                          </div>
+	                          {googlePlacesStatus?.status === "error" ? (
+	                            <p className="text-[11px] text-muted-foreground">usage unavailable</p>
+	                          ) : googlePlacesStatus ? (
+	                            <>
+	                            <div className="space-y-2">
+	                              <div className="rounded bg-muted/40 px-2.5 py-2">
+	                                <div className="flex items-center justify-between gap-2">
+	                                  <p className="text-[11px] font-medium text-foreground">usage</p>
+	                                  <span className="text-[10px] text-muted-foreground font-[family-name:var(--font-geist-mono)]">{googlePlacesStatus.totalCalls} lifetime</span>
+	                                </div>
+	                                <div className="mt-1.5 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+	                                  <div>
+	                                    <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.todayCalls}/{googlePlacesStatus.dailyLimit}</span>
+	                                    today
+	                                  </div>
+	                                  <div>
+	                                    <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.monthCalls}/{googlePlacesStatus.monthlyLimit}</span>
+	                                    this month
+	                                  </div>
+	                                </div>
+	                              </div>
+	                              <div className="grid grid-cols-2 gap-2">
+	                                <div className="rounded bg-muted/40 px-2.5 py-2">
+	                                  <p className="text-[11px] font-medium text-foreground">cache</p>
+	                                  <div className="mt-1.5 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+	                                    <div>
+	                                      <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.mappedVenueCount}/{googlePlacesStatus.cacheCount}</span>
+	                                      mapped venues
+	                                    </div>
+	                                    <div>
+	                                      <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.todayCacheHits}</span>
+	                                      reused today
+	                                    </div>
+	                                  </div>
+	                                </div>
+	                                <div className="rounded bg-muted/40 px-2.5 py-2">
+	                                  <p className="text-[11px] font-medium text-foreground">lookup results</p>
+	                                  <div className="mt-1.5 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+	                                    <div>
+	                                      <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.lookupStatusCounts?.found ?? 0}</span>
+	                                      found
+	                                    </div>
+	                                    <div>
+	                                      <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.lookupStatusCounts?.failed ?? 0}</span>
+	                                      failed
+	                                    </div>
+	                                    <div>
+	                                      <span className="block font-[family-name:var(--font-geist-mono)] text-foreground">{googlePlacesStatus.lookupStatusCounts?.not_found ?? 0}</span>
+	                                      no match
+	                                    </div>
+	                                  </div>
+	                                </div>
+	                              </div>
+	                            </div>
+	                            <div className="rounded border border-amber-500/30 bg-amber-50/60 px-2 py-2 space-y-2 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+	                              <div className="flex items-center justify-between gap-2">
+	                                <p className="text-[11px] font-medium">safety limits</p>
+	                                {googlePlacesStatus.limitsOverridden && <span className="text-[10px] text-amber-700 dark:text-amber-300">custom</span>}
+	                              </div>
+	                              <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+	                                These app limits stop Hivesync before it makes more Google Maps calls. Keep Google Cloud quota and budgets enabled too.
+	                              </p>
+	                              <div className="grid grid-cols-3 gap-2">
+	                                {[
+	                                  ["dailyLimit", "daily"],
+	                                  ["monthlyLimit", "monthly"],
+	                                  ["backfillRunLimit", "backfill"],
+	                                ].map(([key, label]) => (
+	                                  <label key={key} className="text-[10px] text-amber-700 dark:text-amber-300">
+	                                    {label}
+	                                    <input
+	                                      type="number"
+	                                      min={0}
+	                                      value={googlePlacesLimitDraft[key as keyof typeof googlePlacesLimitDraft]}
+	                                      onChange={(e) => {
+	                                        setGooglePlacesLimitDraft((prev) => ({ ...prev, [key]: e.target.value }));
+	                                        setGooglePlacesLimitError(null);
+	                                      }}
+	                                      className="mt-1 h-7 w-full rounded border border-amber-500/30 bg-background px-2 font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
+	                                    />
+	                                  </label>
+	                                ))}
+	                              </div>
+	                              <div className="flex items-center justify-between gap-2">
+	                                <p className="text-[10px] text-amber-700 dark:text-amber-300">
+	                                  {googlePlacesLimitError ?? "changes apply immediately"}
+	                                </p>
+	                                <Button
+	                                  size="sm"
+	                                  variant="outline"
+	                                  className="h-7 px-2 text-xs"
+	                                  onClick={saveGooglePlacesLimits}
+	                                  disabled={googlePlacesLimitSaving}
+	                                >
+	                                  {googlePlacesLimitSaving ? <Spinner /> : "save"}
+	                                </Button>
+	                              </div>
+	                            </div>
+	                            </>
+	                          ) : (
+	                            <Skeleton className="h-10 w-full" />
+	                          )}
+	                        </div>
+	                      </div>
+	                    </div>
 
                   </div>
                 </DialogContent>
               </Dialog>
             </div>
-            <a
-              href="/checkins"
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
-            >
-              <span><span className="font-[family-name:var(--font-geist-mono)] font-semibold">{totalSynced.toLocaleString()}</span> check-in{totalSynced !== 1 ? "s" : ""} synced</span>
-              <span className="group-hover:translate-x-0.5 transition-transform">→</span>
-            </a>
+            <div className="space-y-0.5">
+              <a
+                href="/checkins"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
+              >
+                <span><span className="font-[family-name:var(--font-geist-mono)] font-semibold">{totalSynced.toLocaleString()}</span> check-in{totalSynced !== 1 ? "s" : ""} synced</span>
+                <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+              </a>
+              {visibleUnaccounted != null && (
+                <HoverCard openDelay={200}>
+                  <HoverCardTrigger asChild>
+                    <button type="button" className="block cursor-help text-left text-[11px] text-red-600 decoration-dotted underline-offset-2 hover:underline dark:text-red-400">
+                      <span className="font-[family-name:var(--font-geist-mono)] font-semibold">{visibleUnaccounted.toLocaleString()}</span>&nbsp;unaccounted check-in{visibleUnaccounted !== 1 ? "s" : ""} ☹︎
+                    </button>
+                  </HoverCardTrigger>
+                  <HoverCardContent align="start" className="w-64 text-xs text-muted-foreground">
+                    Swarm says these check-ins exist, but Hivesync has not found matching saved calendar events after checking every available year.
+                  </HoverCardContent>
+                </HoverCard>
+              )}
+            </div>
           </div>
         </div>
         {foursquareConnected && (
@@ -650,9 +1074,39 @@ export function Dashboard({
           </div>
         </div>}
 
-      </div>
+	      </div>
 
-      <Separator />
+	      <AlertDialog open={!!pendingGooglePlacesSync} onOpenChange={(open) => { if (!open) setPendingGooglePlacesSync(null); }}>
+	        <AlertDialogContent>
+	          <AlertDialogHeader>
+	            <AlertDialogTitle>Use Google Maps enrichment for this backfill?</AlertDialogTitle>
+	            <AlertDialogDescription>
+	              This sync may make{" "}
+	              <strong>
+	                <span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight?.estimatedGoogleCalls ?? 0}</span>{" "}
+	                Google Places lookup{googlePlacesPreflight?.estimatedGoogleCalls === 1 ? "" : "s"}
+	              </strong>{" "}
+	              for uncached venues. This run is limited to{" "}
+	              <span className="font-[family-name:var(--font-geist-mono)]">{getManualGooglePlacesLimit()}</span>{" "}
+	              lookup{getManualGooglePlacesLimit() === 1 ? "" : "s"}.{" "}
+	              {manualGooglePlacesAllowFallback ? (
+	                <>
+	                  <span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight?.fallbackCount ?? 0}</span>{" "}
+	                  venue{googlePlacesPreflight?.fallbackCount === 1 ? "" : "s"} may fall back to Foursquare locations if caps are reached.
+	                </>
+	              ) : (
+	                <>Syncing will stop if the Google Maps API limit is reached.</>
+	              )}
+	            </AlertDialogDescription>
+	          </AlertDialogHeader>
+	          <AlertDialogFooter>
+	            <AlertDialogCancel>Cancel</AlertDialogCancel>
+	            <AlertDialogAction onClick={confirmGooglePlacesSync} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Continue</AlertDialogAction>
+	          </AlertDialogFooter>
+	        </AlertDialogContent>
+	      </AlertDialog>
+
+	      <Separator />
 
       {/* sync */}
       <div id="manual-sync" className="space-y-6">
@@ -671,6 +1125,12 @@ export function Dashboard({
           The app auto-syncs daily via cron — new check-ins are picked up automatically. Use the options below to sync on demand, backfill history, or remove events by count, year, or date range.
         </div>}
 
+        {syncOpen && googlePlacesStatus?.status === "capped" && (
+          <p className="text-xs text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
+            Google Maps enrichment is capped for now. Syncs will continue with Foursquare locations.
+          </p>
+        )}
+
         {syncOpen && !canSync && (
           <p className="text-xs text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
             {!foursquareConnected
@@ -683,9 +1143,75 @@ export function Dashboard({
           </p>
         )}
 
-        {syncOpen && canSync && (
-          <Tabs defaultValue="count">
-            <TabsList className="h-7">
+	        {syncOpen && canSync && (
+	          <Tabs defaultValue="count">
+	            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+	              <HoverCard openDelay={200}>
+	                <HoverCardTrigger asChild>
+	                  <span className="inline-flex items-center gap-1.5 cursor-default">
+	                    <SiGooglemaps size={12} className="text-[#4285F4]" />
+	                    <span className="font-semibold text-[#4285F4]">Google Maps API limit</span>
+	                    <LuInfo size={11} className="text-[#4285F4]/80" />
+	                  </span>
+	                </HoverCardTrigger>
+	                <HoverCardContent align="start" className="w-64 text-xs text-muted-foreground">
+	                  Sets the maximum number of Google Maps place lookups this manual sync can make. Cached venues do not count against this number.
+	                </HoverCardContent>
+	              </HoverCard>
+	              <input
+	                type="number"
+	                min={0}
+	                max={googlePlacesStatus?.monthlyLimit ?? 500}
+	                value={manualGooglePlacesLimit}
+	                onChange={(e) => {
+	                  const raw = e.target.value;
+	                  if (raw === "") {
+	                    setManualGooglePlacesLimit("");
+	                    setGooglePlacesPreflight(null);
+	                    return;
+	                  }
+	                  const max = googlePlacesStatus?.monthlyLimit ?? 500;
+	                  setManualGooglePlacesLimit(Math.min(max, Math.max(0, parseInt(raw) || 0)));
+	                  setGooglePlacesPreflight(null);
+	                }}
+	                placeholder={String(googlePlacesStatus?.backfillRunLimit ?? 250)}
+	                className="h-6 w-16 rounded border border-input bg-background px-2 text-center font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
+	              />
+	              <span>lookups/run</span>
+	              <div className="ml-auto flex items-center gap-1.5">
+	                <HoverCard openDelay={200}>
+	                  <HoverCardTrigger asChild>
+	                    <span
+	                      className={`inline-flex cursor-default items-center gap-1 text-xs text-muted-foreground transition-[font-weight] ${
+	                        manualGooglePlacesAllowFallback ? "font-semibold" : "font-medium"
+	                      }`}
+	                    >
+	                      Use Foursquare Data
+	                      <LuInfo size={11} className="text-muted-foreground/70" />
+	                    </span>
+	                  </HoverCardTrigger>
+	                  <HoverCardContent align="end" className="w-64 text-xs text-muted-foreground">
+	                    When the Google Maps API limit is reached, continue creating events with the Foursquare location instead of stopping the sync.
+	                  </HoverCardContent>
+	                </HoverCard>
+	                <button
+	                  type="button"
+	                  role="switch"
+	                  aria-checked={manualGooglePlacesAllowFallback}
+	                  aria-label="use Foursquare after limit is reached"
+	                  onClick={() => {
+	                    setManualGooglePlacesAllowFallback((value) => !value);
+	                    setGooglePlacesPreflight(null);
+	                  }}
+	                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none ${
+	                    manualGooglePlacesAllowFallback ? "bg-foreground" : "bg-input"
+	                  }`}
+	                >
+	                  <span className={`inline-block h-3 w-3 transform rounded-full bg-background transition-transform ${manualGooglePlacesAllowFallback ? "translate-x-3.5" : "translate-x-0.5"}`} />
+	                </button>
+	              </div>
+	            </div>
+	            <TabsList className="h-7">
               <TabsTrigger value="count" className="text-xs h-5 px-3 gap-1.5"><LuList size={11} />last (x) check-ins</TabsTrigger>
               <TabsTrigger value="range" className="text-xs h-5 px-3 gap-1.5"><LuCalendarRange size={11} />date / range</TabsTrigger>
               <TabsTrigger value="year" className="text-xs h-5 px-3 gap-1.5"><LuCalendarDays size={11} />year</TabsTrigger>
@@ -763,8 +1289,45 @@ export function Dashboard({
 
             {/* year tab */}
             <TabsContent value="year" className="mt-5 space-y-3">
+              <div className="rounded-md border border-border/70 bg-muted/25 px-3 py-2">
+                <p className="text-[11px] leading-4 text-muted-foreground">
+                  {hasCheckedYearGap && unscannedGap != null
+                    ? `${unscannedGap.toLocaleString()} check-in${unscannedGap !== 1 ? "s are" : " is"} still unaccounted for outside the ${loadedYearCount} year${loadedYearCount !== 1 ? "s" : ""} checked so far.`
+                    : "The all-time gap compares Swarm total check-ins against saved calendar events; pick years below to see where the gap lives."}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                  <span>
+                    <span className="font-[family-name:var(--font-geist-mono)] font-semibold text-foreground">
+                      {FIRST_FOURSQUARE_YEAR}-{currentYear}
+                    </span>{" "}
+                    years available
+                  </span>
+                  <span>
+                    <span className="font-[family-name:var(--font-geist-mono)] font-semibold text-foreground">
+                      {allTimeMissing == null ? "..." : allTimeMissing.toLocaleString()}
+                    </span>{" "}
+                    missing all-time
+                  </span>
+                  {hasCheckedYearGap && (
+                    <span>
+                      <span className="font-[family-name:var(--font-geist-mono)] font-semibold text-foreground">
+                        {loadedYearGap.toLocaleString()}
+                      </span>{" "}
+                      found in checked years
+                    </span>
+                  )}
+                  {hasCheckedYearGap && (
+                    <span>
+                      <span className="font-[family-name:var(--font-geist-mono)] font-semibold text-foreground">
+                        {unscannedGap!.toLocaleString()}
+                      </span>{" "}
+                      still unaccounted for
+                    </span>
+                  )}
+                </div>
+              </div>
               <div className="flex items-center gap-2">
-                <Select value={fromYear} onValueChange={(v) => { setFromYear(v); setDeleteYearValue(v); setDeleteYearResult(null); setSyncState({ type: "idle" }); }}>
+	                <Select value={fromYear} onValueChange={(v) => { setFromYear(v); setDeleteYearValue(v); setDeleteYearResult(null); setGooglePlacesPreflight(null); setSyncState({ type: "idle" }); }}>
                   <SelectTrigger className="h-7 text-xs w-24 font-[family-name:var(--font-geist-mono)]"><SelectValue placeholder="year" /></SelectTrigger>
                   <SelectContent>
                     {years.map((y) => <SelectItem key={y} value={String(y)} className="font-[family-name:var(--font-geist-mono)]">{y}</SelectItem>)}
@@ -773,11 +1336,11 @@ export function Dashboard({
                 {fromYear && (
                   <>
                     <span className="text-muted-foreground/30">·</span>
-                    <button onClick={() => { setFromYear(""); setDeleteYearValue(String(currentYear)); setDeleteYearResult(null); setSyncState({ type: "idle" }); }} className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
+	                    <button onClick={() => { setFromYear(""); setDeleteYearValue(String(currentYear)); setDeleteYearResult(null); setGooglePlacesPreflight(null); setSyncState({ type: "idle" }); }} className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
                   </>
                 )}
                 <div className="flex items-center gap-2 ml-auto">
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors" onClick={handleFullSync} disabled={syncState.type === "loading" || syncState.type === "running" || !fromYear}>
+	                  <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors" onClick={handleFullSync} disabled={syncState.type === "loading" || syncState.type === "running" || googlePlacesPreflightLoading || !fromYear}>
                     <LuRefreshCw size={11} />sync
                   </Button>
                   <AlertDialog>
@@ -833,7 +1396,13 @@ export function Dashboard({
                         })()}
                       </div>
                     )}
-                    {syncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
+	                    {googlePlacesPreflightLoading && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium"><Spinner />checking maps usage…</span>}
+	                    {googlePlacesPreflight && !googlePlacesPreflightLoading && syncState.type === "idle" && (
+	                      <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+	                        <LuMapPin size={10} /><span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.estimatedGoogleCalls}</span> maps lookups, <span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.fallbackCount}</span> fallback
+	                      </span>
+	                    )}
+	                    {syncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
                     {syncState.type === "running" && (
                       <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />{syncState.synced} new, {syncState.skipped} skipped</span>
@@ -871,10 +1440,10 @@ export function Dashboard({
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="range"
-                      selected={{ from: rangeFrom, to: rangeTo }}
-                      onSelect={(r: DateRange | undefined) => { setRangeFrom(r?.from); setRangeTo(r?.to); }}
+	                    <Calendar
+	                      mode="range"
+	                      selected={{ from: rangeFrom, to: rangeTo }}
+	                      onSelect={(r: DateRange | undefined) => { setRangeFrom(r?.from); setRangeTo(r?.to); setGooglePlacesPreflight(null); }}
                       initialFocus
                       numberOfMonths={2}
                     />
@@ -883,16 +1452,16 @@ export function Dashboard({
                 {(rangeFrom || rangeTo) && (
                   <>
                     <span className="text-muted-foreground/30">·</span>
-                    <button onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setRangeDeleteResult(null); setRangeSyncState({ type: "idle" }); }} className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
+	                    <button onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setRangeDeleteResult(null); setGooglePlacesPreflight(null); setRangeSyncState({ type: "idle" }); }} className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
                   </>
                 )}
                 <div className="flex items-center gap-2 ml-auto">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors"
-                    onClick={handleRangeSync}
-                    disabled={!rangeFrom || rangeSyncState.type === "loading" || rangeSyncState.type === "running"}
+	                    className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors"
+	                    onClick={handleRangeSync}
+	                    disabled={!rangeFrom || rangeCountLoading || rangeSyncState.type === "loading" || rangeSyncState.type === "running" || googlePlacesPreflightLoading}
                   >
                     <LuRefreshCw size={11} />sync
                   </Button>
@@ -933,10 +1502,16 @@ export function Dashboard({
                         })() : null}
                       </div>
                     )}
-                    {rangeSyncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
+	                    {googlePlacesPreflightLoading && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium"><Spinner />checking maps usage…</span>}
+	                    {googlePlacesPreflight && !googlePlacesPreflightLoading && rangeSyncState.type === "idle" && (
+	                      <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+	                        <LuMapPin size={10} /><span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.estimatedGoogleCalls}</span> maps lookups, <span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.fallbackCount}</span> fallback
+	                      </span>
+	                    )}
+	                    {rangeSyncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
                     {rangeSyncState.type === "running" && (
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />{rangeSyncState.synced} new, {rangeSyncState.skipped} skipped</span>
+                        <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />{rangeSyncState.synced} new, {rangeSyncState.skipped} skipped{rangeSyncState.total ? ` of ${rangeSyncState.total}` : ""}</span>
                         <button onClick={handleStopRangeSync} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-medium"><LuX size={10} />stop</button>
                       </div>
                     )}

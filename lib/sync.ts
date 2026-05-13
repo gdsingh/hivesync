@@ -2,6 +2,7 @@ import { google, calendar_v3 } from "googleapis";
 import { find as geoFind } from "geo-tz";
 import { db } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/encrypt";
+import { GooglePlacesContext, resolveVenueLocation } from "@/lib/google-places";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -313,7 +314,8 @@ export async function syncCheckins(
   checkins: FoursquareCheckin[],
   calendarService: calendar_v3.Calendar,
   calendarId: string,
-  foursquareToken?: string
+  foursquareToken?: string,
+  googlePlacesContext: GooglePlacesContext = {}
 ): Promise<SyncResult> {
   const result: SyncResult = { synced: 0, skipped: 0, errors: 0 };
 
@@ -344,7 +346,12 @@ export async function syncCheckins(
         }
       }
 
-      const { id: eventId, htmlLink: calendarEventUrl } = await createCalendarEvent(fullCheckin, calendarService, calendarId);
+      const { id: eventId, htmlLink: calendarEventUrl } = await createCalendarEvent(
+        fullCheckin,
+        calendarService,
+        calendarId,
+        googlePlacesContext
+      );
       const loc = checkin.venue?.location;
       const venueCity = loc
         ? [loc.city, loc.state ?? loc.country].filter(Boolean).join(", ") || null
@@ -383,35 +390,11 @@ export async function syncCheckins(
   return result;
 }
 
-async function lookupPlace(
-  venue: FoursquareVenue,
-  apiKey: string
-): Promise<{ formattedAddress: string | null }> {
-  try {
-    const query = formatEventLocation(venue);
-    const params = new URLSearchParams({ query, key: apiKey });
-    if (venue.location?.lat != null && venue.location?.lng != null) {
-      params.set("location", `${venue.location.lat},${venue.location.lng}`);
-      params.set("radius", "100");
-    }
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/place/textsearch/json?${params}`
-    );
-    const data = await res.json();
-    const result = data?.results?.[0];
-    return {
-      formattedAddress: result?.formatted_address ?? null,
-    };
-  } catch {
-    console.error("google places lookup failed for venue:", venue.name);
-    return { formattedAddress: null };
-  }
-}
-
 async function createCalendarEvent(
   checkin: FoursquareCheckin,
   calendarService: calendar_v3.Calendar,
-  calendarId: string
+  calendarId: string,
+  googlePlacesContext: GooglePlacesContext
 ): Promise<{ id: string; htmlLink: string | null | undefined }> {
   const venue = checkin.venue;
   const timezone = venue ? getVenueTimezone(venue) : "UTC";
@@ -449,15 +432,9 @@ async function createCalendarEvent(
     },
   };
 
-  // enrich location with google's formatted address if maps key is set
   if (venue) {
-    const mapsKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (mapsKey) {
-      const { formattedAddress } = await lookupPlace(venue, mapsKey);
-      if (formattedAddress) {
-        eventBody.location = `${venue.name}, ${formattedAddress}`;
-      }
-    }
+    const resolvedLocation = await resolveVenueLocation(venue, googlePlacesContext);
+    eventBody.location = resolvedLocation.location;
   }
 
 

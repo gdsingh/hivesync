@@ -7,24 +7,85 @@ import {
   ensureSwarmCalendar,
   fetchCheckins,
   syncCheckins,
+  type FoursquareCheckin,
 } from "@/lib/sync";
+import { getGooglePlacesLimits } from "@/lib/google-places";
 
 const CHUNK_SIZE = 15;
+const RANGE_FETCH_SIZE = 250;
+
+function parseDateOnlyToUtcTimestamp(value: string, addDays = 0) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return NaN;
+
+  const [, year, month, day] = match;
+  return Math.floor(Date.UTC(Number(year), Number(month) - 1, Number(day) + addDays) / 1000);
+}
+
+function getRequestTimestamp(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+async function fetchExactRangeCheckins(token: string, afterTimestamp: number, beforeTimestamp: number) {
+  let offset = 0;
+  const exactItems: FoursquareCheckin[] = [];
+
+  while (true) {
+    const { items, total } = await fetchCheckins(
+      token,
+      offset,
+      afterTimestamp,
+      RANGE_FETCH_SIZE,
+      beforeTimestamp
+    );
+
+    exactItems.push(...items.filter((c) =>
+      c.createdAt >= afterTimestamp &&
+      c.createdAt < beforeTimestamp
+    ));
+
+    const oldestItem = items.reduce<number | null>(
+      (oldest, item) => oldest == null ? item.createdAt : Math.min(oldest, item.createdAt),
+      null
+    );
+
+    offset += RANGE_FETCH_SIZE;
+    if (
+      offset >= total ||
+      items.length < RANGE_FETCH_SIZE ||
+      (oldestItem != null && oldestItem < afterTimestamp)
+    ) {
+      break;
+    }
+  }
+
+  return exactItems;
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const from: string | undefined = body.from; // "yyyy-MM-dd"
   const to: string | undefined = body.to;     // "yyyy-MM-dd"
+  const expectedCheckins =
+    typeof body.expectedCheckins === "number" && Number.isInteger(body.expectedCheckins) && body.expectedCheckins >= 0
+      ? body.expectedCheckins
+      : undefined;
+  const googlePlacesApproved = body.googlePlacesApproved === true;
+  const googlePlacesLimits = await getGooglePlacesLimits();
+  const googlePlacesRunLimit =
+    typeof body.googlePlacesRunLimit === "number" && Number.isInteger(body.googlePlacesRunLimit) && body.googlePlacesRunLimit >= 0
+      ? Math.min(body.googlePlacesRunLimit, googlePlacesLimits.monthlyLimit)
+      : (googlePlacesApproved ? googlePlacesLimits.backfillRunLimit : googlePlacesLimits.dailyLimit);
+  const googlePlacesAllowFallback = body.googlePlacesAllowFallback !== false;
 
   if (!from || !to) {
     return NextResponse.json({ error: "from and to dates required" }, { status: 400 });
   }
 
-  const afterTimestamp = Math.floor(new Date(from).getTime() / 1000);
-  // beforeTimestamp = end of the "to" day
-  const beforeTimestamp = Math.floor(new Date(to + "T23:59:59").getTime() / 1000);
+  const afterTimestamp = getRequestTimestamp(body.afterTimestamp) ?? parseDateOnlyToUtcTimestamp(from);
+  const beforeTimestamp = getRequestTimestamp(body.beforeTimestamp) ?? parseDateOnlyToUtcTimestamp(to, 1);
 
-  if (isNaN(afterTimestamp) || isNaN(beforeTimestamp)) {
+  if (isNaN(afterTimestamp) || isNaN(beforeTimestamp) || beforeTimestamp <= afterTimestamp) {
     return NextResponse.json({ error: "invalid date range" }, { status: 400 });
   }
 
@@ -34,6 +95,14 @@ export async function POST(req: NextRequest) {
   }
 
   const foursquareToken = decrypt(userConfig.foursquareToken);
+  const rangeCheckins = await fetchExactRangeCheckins(foursquareToken, afterTimestamp, beforeTimestamp);
+  if (expectedCheckins != null && rangeCheckins.length > expectedCheckins + 5) {
+    return NextResponse.json({
+      error: `range mismatch: expected about ${expectedCheckins} check-ins, found ${rangeCheckins.length}; sync stopped before Google Maps calls`,
+      expectedCheckins,
+      foundCheckins: rangeCheckins.length,
+    }, { status: 409 });
+  }
 
   const running = await db.syncJob.findFirst({ where: { status: "RUNNING" } });
   if (running) {
@@ -43,9 +112,14 @@ export async function POST(req: NextRequest) {
   const job = await db.syncJob.create({
     data: {
       status: "RUNNING",
+      jobType: "RANGE",
       afterTimestamp,
       beforeTimestamp,
       currentOffset: 0,
+      googlePlacesApproved,
+      googlePlacesRunLimit,
+      googlePlacesAllowFallback,
+      rangeCheckins: rangeCheckins as unknown as object[],
     },
   });
 
@@ -53,18 +127,15 @@ export async function POST(req: NextRequest) {
   const calendarService = google.calendar({ version: "v3", auth });
   const calendarId = await ensureSwarmCalendar(calendarService);
 
-  const { items, total } = await fetchCheckins(
-    foursquareToken,
-    0,
-    afterTimestamp,
-    CHUNK_SIZE,
-    beforeTimestamp
-  );
+  const items = rangeCheckins.slice(0, CHUNK_SIZE);
 
-  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);
+  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken, {
+    mode: "backfill",
+    jobId: job.id,
+  });
 
-  const newOffset = CHUNK_SIZE;
-  const isDone = newOffset >= total || items.length < CHUNK_SIZE;
+  const newOffset = items.length;
+  const isDone = newOffset >= rangeCheckins.length;
 
   await db.syncJob.update({
     where: { id: job.id },
@@ -91,6 +162,6 @@ export async function POST(req: NextRequest) {
     totalSkipped: result.skipped,
     totalErrors: result.errors,
     currentOffset: newOffset,
-    total,
+    total: rangeCheckins.length,
   });
 }

@@ -41,6 +41,69 @@ model SyncedCheckin {
   @@map("synced_checkins")
 }
 
+model VenueEnrichment {
+  foursquareVenueId      String   @id
+  foursquareName         String?
+  foursquareAddress      String?
+  foursquareCity         String?
+  foursquareState        String?
+  foursquareCountry      String?
+  foursquarePostalCode   String?
+  foursquareLatitude     Float?
+  foursquareLongitude    Float?
+  googlePlaceId          String?
+  googleMapsUri          String?
+  googleFormattedAddress String?
+  googleLookupStatus     String   @default("PENDING")
+  googleError            String?
+  googleFetchedAt        DateTime?
+  cacheHits              Int      @default(0)
+  lastCacheHitAt         DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("venue_enrichments")
+}
+
+model GooglePlacesUsage {
+  date      String   @id
+  calls     Int      @default(0)
+  cacheHits Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("google_places_usage")
+}
+
+model GooglePlacesSettings {
+  id                Int      @id
+  dailyLimit        Int?
+  monthlyLimit      Int?
+  backfillRunLimit  Int?
+  warningThreshold  Float?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("google_places_settings")
+}
+
+model SyncCountAudit {
+  id                  Int      @id
+  firstYear           Int
+  lastYear            Int
+  checkedYears        Json
+  totalCheckins       Int?
+  totalSynced         Int
+  foundInCheckedYears Int      @default(0)
+  unaccountedCheckins Int?
+  completed           Boolean  @default(false)
+  checkedAt           DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("sync_count_audits")
+}
+
 model SyncLog {
   id           String   @id @default(uuid())
   type         SyncType
@@ -64,6 +127,12 @@ model SyncJob {
   totalSynced    Int       @default(0)
   totalSkipped   Int       @default(0)
   totalErrors    Int       @default(0)
+  googlePlacesCalls Int      @default(0)
+  googlePlacesRunLimit Int?
+  googlePlacesApproved Boolean @default(false)
+  googlePlacesAllowFallback Boolean @default(true)
+  jobType        String?
+  rangeCheckins   Json?
   errorMessage   String?
   startedAt      DateTime  @default(now())
   completedAt    DateTime?

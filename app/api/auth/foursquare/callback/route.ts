@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/prisma";
 import { encrypt } from "@/lib/encrypt";
+import { normalizeBaseUrl } from "@/lib/url";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const storedState = req.cookies.get("fsq-state")?.value;
-  const baseUrl = process.env.NEXTAUTH_URL ?? req.nextUrl.origin;
+  const baseUrl = normalizeBaseUrl(process.env.NEXTAUTH_URL, req.nextUrl.origin);
 
   // csrf check
   if (!state || !storedState || state !== storedState) {

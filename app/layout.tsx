@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import { normalizeBaseUrl } from "@/lib/url";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXTAUTH_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(normalizeBaseUrl(process.env.NEXTAUTH_URL)),
   title: {
     default: "Hivesync",
     template: "%s – Hivesync",
