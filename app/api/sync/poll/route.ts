@@ -24,7 +24,9 @@ async function handlePoll() {
   // fetch check-ins from the last 24 hours
   const afterTimestamp = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
   const { items } = await fetchCheckins(foursquareToken, 0, afterTimestamp, 20);
-  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);
+  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken, {
+    googleMapsEnabled: userConfig.googleMapsEnabled,
+  });
 
   await db.syncLog.create({
     data: { type: "POLL", synced: result.synced, skipped: result.skipped, errors: result.errors },

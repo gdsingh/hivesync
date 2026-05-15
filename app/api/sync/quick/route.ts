@@ -24,7 +24,9 @@ export async function POST(req: NextRequest) {
   const calendarId = await ensureSwarmCalendar(calendarService);
 
   const { items } = await fetchCheckins(foursquareToken, 0, undefined, count);
-  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken);
+  const result = await syncCheckins(items, calendarService, calendarId, foursquareToken, {
+    googleMapsEnabled: userConfig.googleMapsEnabled,
+  });
 
   await db.syncLog.create({
     data: { type: "QUICK", synced: result.synced, skipped: result.skipped, errors: result.errors },

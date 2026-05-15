@@ -8,16 +8,6 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 
 *Interested in what it looks like? Check out the [demo](https://gdsingh.github.io/hivesync/).*
 
-### Release notes
-
-#### v1.2.0
-
-- Added a mobile-friendly layout across Home, Stats, Check-ins, History, Login, and Setup screens
-- Improved manual sync controls for phones, including full-width date/year pickers and clearer sync/remove spacing
-- Refined the Connections panel with rounded cards, a collapsible Google Maps safety limits section, and better mobile spacing
-- Improved dialogs, date pickers, pagination, footer controls, and page padding across screen sizes
-- Closes issue #1
-
 ### Features
 
 - **Connect** your Swarm and Google accounts via OAuth

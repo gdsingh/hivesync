@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
   );
   const valid = checkinDetails.filter(Boolean) as Awaited<ReturnType<typeof fetchCheckinDetail>>[];
 
-  const result = await syncCheckins(valid, calendarService, calendarId, foursquareToken);
+  const result = await syncCheckins(valid, calendarService, calendarId, foursquareToken, {
+    googleMapsEnabled: userConfig.googleMapsEnabled,
+  });
 
   await db.syncLog.create({
     data: { type: "RESYNC", synced: result.synced, skipped: result.skipped, errors: result.errors, errorMessage: `${ids.length} selected` },

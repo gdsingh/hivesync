@@ -24,6 +24,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "foursquare not connected" }, { status: 400 });
   }
 
+  const usage = await getGooglePlacesUsageStatus();
+  if (!usage.googleMapsEnabled) {
+    return NextResponse.json({
+      totalCheckins: 0,
+      candidateCheckins: 0,
+      uniqueUncachedVenues: 0,
+      estimatedGoogleCalls: 0,
+      dailyRemaining: Math.max(0, usage.dailyLimit - usage.todayCalls),
+      monthlyRemaining: Math.max(0, usage.monthlyLimit - usage.monthCalls),
+      backfillRemaining: requestedRunLimit ?? usage.backfillRunLimit,
+      fallbackCount: 0,
+      confirmationRequired: false,
+      usage,
+    });
+  }
+
   const token = decrypt(config.foursquareToken);
   let offset = 0;
   const candidates: Array<{ id: string; venue?: FoursquareVenue }> = [];
@@ -74,7 +90,6 @@ export async function POST(req: NextRequest) {
     : [];
   const cachedIds = new Set(cached.map((v) => v.foursquareVenueId));
   const estimatedGoogleCalls = candidateVenueIds.filter((id) => !cachedIds.has(id)).length;
-  const usage = await getGooglePlacesUsageStatus();
   const dailyRemaining = Math.max(0, usage.dailyLimit - usage.todayCalls);
   const monthlyRemaining = Math.max(0, usage.monthlyLimit - usage.monthCalls);
   const backfillRemaining = requestedRunLimit ?? usage.backfillRunLimit;

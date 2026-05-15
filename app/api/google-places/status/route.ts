@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGooglePlacesUsageStatus, updateGooglePlacesLimits } from "@/lib/google-places";
+import { getGooglePlacesUsageStatus, updateGoogleMapsEnrichmentEnabled, updateGooglePlacesLimits } from "@/lib/google-places";
 
 export async function GET() {
   try {
@@ -13,6 +13,11 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
+    if (typeof body.googleMapsEnabled === "boolean") {
+      const status = await updateGoogleMapsEnrichmentEnabled(body.googleMapsEnabled);
+      return NextResponse.json(status);
+    }
+
     const dailyLimit = Number(body.dailyLimit);
     const monthlyLimit = Number(body.monthlyLimit);
     const backfillRunLimit = Number(body.backfillRunLimit);

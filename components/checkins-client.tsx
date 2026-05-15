@@ -168,6 +168,7 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
   const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [foursquareTotal, setFoursquareTotal] = useState<number | null>(initialFoursquareTotal ?? null);
+  const [pageInput, setPageInput] = useState(String(page));
 
   useEffect(() => {
     if (initialFoursquareTotal != null) return;
@@ -179,6 +180,7 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
+    setPageInput(String(page));
   }, [page]);
 
   const initialRange: DateRange | undefined = fromParam
@@ -230,6 +232,12 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
     return buildUrl(dateRange, p);
   }
 
+  function commitPageInput() {
+    const nextPage = Math.min(totalPages, Math.max(1, parseInt(pageInput, 10) || page));
+    setPageInput(String(nextPage));
+    if (nextPage !== page) router.push(getPageUrl(nextPage));
+  }
+
   function PaginationBar() {
     const delta = 1;
     const pages: (number | "ellipsis")[] = [];
@@ -263,11 +271,27 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
             )}
           </PaginationContent>
         </Pagination>
-        <span className="flex-1 text-center text-xs text-muted-foreground min-[380px]:hidden">
-          <span className="font-[family-name:var(--font-geist-mono)]">{page}</span>
-          {" / "}
+        <div className="flex flex-1 items-center justify-center gap-1.5 text-xs text-muted-foreground min-[380px]:justify-end">
+          <span className="hidden sm:inline">page</span>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value)}
+            onBlur={commitPageInput}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+                commitPageInput();
+              }
+            }}
+            aria-label="page number"
+            className="h-7 w-9 appearance-none rounded-md border border-input bg-background px-1 text-center font-[family-name:var(--font-geist-mono)] text-xs text-foreground [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          <span>/</span>
           <span className="font-[family-name:var(--font-geist-mono)]">{totalPages}</span>
-        </span>
+        </div>
         <PaginationNext
           href={page < totalPages ? getPageUrl(page + 1) : undefined}
           className={`h-7 text-xs px-2 gap-1 ${page >= totalPages ? "pointer-events-none opacity-30" : ""}`}
@@ -549,6 +573,10 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
                   <div className="pl-5">
                     {dayCheckins.map((c) => {
                       const isSelected = selected.has(c.checkinId);
+                      const descLines = (c.description ?? "").split("\n\n").filter((p) => !!p);
+                      const foursquareUrl = descLines.find((p) => p.startsWith("https://foursquare.com/"));
+                      const otherLines = descLines.filter((p) => !p.startsWith("https://foursquare.com/"));
+                      const hasHoverContent = otherLines.length > 0 || !!c.stickerImageUrl;
                       return (
                         <div
                           key={c.checkinId}
@@ -572,10 +600,7 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
                           <div className={`flex-1 min-w-0 transition-opacity ${isSelected ? "opacity-40" : ""}`}>
                             <div className="flex flex-col gap-0.5 min-[380px]:flex-row min-[380px]:items-baseline min-[380px]:justify-between min-[380px]:gap-3">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                {(c.description || c.stickerImageUrl) ? (() => {
-                                  const descLines = (c.description ?? "").split("\n\n").filter((p) => !!p);
-                                  const foursquareUrl = descLines.find((p) => p.startsWith("https://foursquare.com/"));
-                                  const otherLines = descLines.filter((p) => !p.startsWith("https://foursquare.com/"));
+                                {hasHoverContent ? (() => {
                                   return (
                                     <HoverCard openDelay={200} closeDelay={100}>
                                       <HoverCardTrigger asChild>

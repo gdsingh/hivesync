@@ -75,7 +75,8 @@ type GooglePlacesStatus = {
   mappedVenueCount: number;
   lookupStatusCounts: Record<string, number>;
   limitsOverridden: boolean;
-  status: "no_key" | "enabled" | "near_limit" | "capped" | "error";
+  googleMapsEnabled: boolean;
+  status: "disabled" | "no_key" | "enabled" | "near_limit" | "capped" | "error";
 };
 
 type GooglePlacesPreflight = {
@@ -183,6 +184,7 @@ export function Dashboard({
   });
   const [googlePlacesLimitSaving, setGooglePlacesLimitSaving] = useState(false);
   const [googlePlacesLimitError, setGooglePlacesLimitError] = useState<string | null>(null);
+  const [googleMapsToggleSaving, setGoogleMapsToggleSaving] = useState(false);
   const stopYearSyncRef = useRef(false);
   const stopRangeSyncRef = useRef(false);
   const quickSyncAbortRef = useRef<AbortController | null>(null);
@@ -473,6 +475,25 @@ export function Dashboard({
     }
   }
 
+  async function handleGoogleMapsEnabledToggle() {
+    if (!googlePlacesStatus || googlePlacesStatus.status === "error") return;
+    const next = !googlePlacesStatus.googleMapsEnabled;
+    setGoogleMapsToggleSaving(true);
+    setGooglePlacesStatus({ ...googlePlacesStatus, googleMapsEnabled: next, status: next ? (googlePlacesStatus.hasKey ? "enabled" : "no_key") : "disabled" });
+    setGooglePlacesPreflight(null);
+    try {
+      const res = await fetch("/api/google-places/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ googleMapsEnabled: next }),
+      });
+      const data = await res.json();
+      if (res.ok && !data.error) setGooglePlacesStatus(data);
+    } finally {
+      setGoogleMapsToggleSaving(false);
+    }
+  }
+
   async function runGooglePlacesPreflight(afterTimestamp: number, beforeTimestamp: number): Promise<GooglePlacesPreflight | null> {
     setGooglePlacesPreflightLoading(true);
     setGooglePlacesPreflight(null);
@@ -736,6 +757,7 @@ export function Dashboard({
 
   const calendarReady = calendarStatus === "ready";
   const canSync = foursquareConnected && googleConnected && calendarReady;
+  const manualSyncGoogleMuted = googlePlacesStatus?.googleMapsEnabled === false || manualGooglePlacesAllowFallback;
   return (
     <div className="max-w-2xl mx-auto px-6 py-12 space-y-8 sm:px-4">
 
@@ -829,21 +851,28 @@ export function Dashboard({
 	                            </HoverCardContent>
 	                          </HoverCard>
 	                        </div>
-	                        <div className="border-t pt-2 space-y-2">
+	                        <div className={`border-t pt-2 space-y-2 ${googlePlacesStatus?.googleMapsEnabled === false ? "opacity-60" : ""}`}>
 	                          <div className="flex items-center justify-between gap-2">
 	                            <div className="flex items-center gap-2 min-w-0">
 	                              <LuMapPin size={14} className="text-muted-foreground shrink-0" />
 	                              <div>
 	                                <p className="text-xs font-medium leading-none">maps enrichment</p>
-	                                <p className="text-[11px] text-muted-foreground mt-0.5">
-	                                  {googlePlacesStatus?.status === "no_key" ? "no api key configured" : googlePlacesStatus?.status === "capped" ? "capped for now" : googlePlacesStatus?.status === "near_limit" ? "near limit" : googlePlacesStatus?.status === "error" ? "could not load usage" : "enabled"}
+	                                <p className="text-[11px] mt-0.5 text-muted-foreground">
+	                                  {googlePlacesStatus?.status === "disabled" ? "google maps api disabled" : googlePlacesStatus?.status === "no_key" ? "no api key configured" : googlePlacesStatus?.status === "capped" ? "capped for now" : googlePlacesStatus?.status === "near_limit" ? "near limit" : googlePlacesStatus?.status === "error" ? "could not load usage" : "enabled"}
 	                                </p>
 	                              </div>
 	                            </div>
 	                            {googlePlacesStatus && googlePlacesStatus.status !== "error" && (
-	                              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${googlePlacesStatus.status === "capped" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" : googlePlacesStatus.status === "near_limit" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}>
-	                                {googlePlacesStatus.status === "no_key" ? "off" : googlePlacesStatus.status === "capped" ? "capped" : googlePlacesStatus.status === "near_limit" ? "watch" : "on"}
-	                              </span>
+	                              <button
+	                                type="button"
+	                                role="switch"
+	                                aria-checked={googlePlacesStatus.googleMapsEnabled}
+	                                onClick={handleGoogleMapsEnabledToggle}
+	                                disabled={googleMapsToggleSaving}
+	                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${googlePlacesStatus.googleMapsEnabled ? "bg-foreground" : "bg-input"}`}
+	                              >
+	                                <span className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${googlePlacesStatus.googleMapsEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
+	                              </button>
 	                            )}
 	                          </div>
 	                          {googlePlacesStatus?.status === "error" ? (
@@ -1160,73 +1189,86 @@ export function Dashboard({
 
 	        {syncOpen && canSync && (
 	          <Tabs defaultValue="count">
-	            <div className="mb-4 flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center">
-	              <div className="flex flex-wrap items-center gap-2">
-	                <HoverCard openDelay={200}>
-	                  <HoverCardTrigger asChild>
-	                    <span className="inline-flex items-center gap-1.5 cursor-default">
-	                      <SiGooglemaps size={12} className="text-[#4285F4]" />
-	                      <span className="font-semibold text-[#4285F4]">Google Maps API limit</span>
-	                      <LuInfo size={11} className="text-[#4285F4]/80" />
-	                    </span>
-	                  </HoverCardTrigger>
-	                  <HoverCardContent align="start" className="w-64 text-xs text-muted-foreground">
-	                    Sets the maximum number of Google Maps place lookups this manual sync can make. Cached venues do not count against this number.
-	                  </HoverCardContent>
-	                </HoverCard>
-	                <input
-	                  type="number"
-	                  min={0}
-	                  max={googlePlacesStatus?.monthlyLimit ?? 500}
-	                  value={manualGooglePlacesLimit}
-	                  onChange={(e) => {
-	                    const raw = e.target.value;
-	                    if (raw === "") {
-	                      setManualGooglePlacesLimit("");
-	                      setGooglePlacesPreflight(null);
-	                      return;
-	                    }
-	                    const max = googlePlacesStatus?.monthlyLimit ?? 500;
-	                    setManualGooglePlacesLimit(Math.min(max, Math.max(0, parseInt(raw) || 0)));
-	                    setGooglePlacesPreflight(null);
-	                  }}
-	                  placeholder={String(googlePlacesStatus?.backfillRunLimit ?? 250)}
-	                  className="h-6 w-16 rounded border border-input bg-background px-2 text-center font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
-	                />
-	                <span>lookups/run</span>
-	              </div>
-	              <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 sm:ml-auto sm:border-t-0 sm:pt-0">
-	                <HoverCard openDelay={200}>
-	                  <HoverCardTrigger asChild>
-	                    <span
-	                      className={`inline-flex cursor-default items-center gap-1 text-xs text-muted-foreground transition-[font-weight] ${
-	                        manualGooglePlacesAllowFallback ? "font-semibold" : "font-medium"
+	            <div className={`mb-4 flex flex-col gap-2 rounded-md border px-3 py-2 text-xs sm:flex-row sm:items-center ${manualSyncGoogleMuted ? "border-[#f94877]/25 bg-[#f94877]/5 text-[#f94877]" : "border-border/60 bg-muted/30 text-muted-foreground"}`}>
+	              {googlePlacesStatus?.googleMapsEnabled === false ? (
+	                <div className="flex w-full flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+	                  <span className="font-medium">
+	                    Google Maps API disabled
+	                  </span>
+	                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+	                    Manual syncs will use <FaFoursquare size={12} className="shrink-0 text-[#f94877]" /> Foursquare venue locations.
+	                  </span>
+	                </div>
+	              ) : (
+	                <>
+	                  <div className={`flex flex-wrap items-center gap-2 ${manualSyncGoogleMuted ? "opacity-60" : ""}`}>
+	                    <HoverCard openDelay={200}>
+	                      <HoverCardTrigger asChild>
+	                        <span className="inline-flex items-center gap-1.5 cursor-default">
+	                          <SiGooglemaps size={12} className={manualSyncGoogleMuted ? "text-muted-foreground" : "text-[#4285F4]"} />
+	                          <span className={`font-semibold ${manualSyncGoogleMuted ? "text-muted-foreground" : "text-[#4285F4]"}`}>Google Maps API limit</span>
+	                          <LuInfo size={11} className={manualSyncGoogleMuted ? "text-muted-foreground/70" : "text-[#4285F4]/80"} />
+	                        </span>
+	                      </HoverCardTrigger>
+	                      <HoverCardContent align="start" className="w-64 text-xs text-muted-foreground">
+	                        Sets the maximum number of Google Maps place lookups this manual sync can make. Cached venues do not count against this number.
+	                      </HoverCardContent>
+	                    </HoverCard>
+	                    <input
+	                      type="number"
+	                      min={0}
+	                      max={googlePlacesStatus?.monthlyLimit ?? 500}
+	                      value={manualGooglePlacesLimit}
+	                      onChange={(e) => {
+	                        const raw = e.target.value;
+	                        if (raw === "") {
+	                          setManualGooglePlacesLimit("");
+	                          setGooglePlacesPreflight(null);
+	                          return;
+	                        }
+	                        const max = googlePlacesStatus?.monthlyLimit ?? 500;
+	                        setManualGooglePlacesLimit(Math.min(max, Math.max(0, parseInt(raw) || 0)));
+	                        setGooglePlacesPreflight(null);
+	                      }}
+	                      placeholder={String(googlePlacesStatus?.backfillRunLimit ?? 250)}
+	                      className="h-6 w-16 rounded border border-input bg-background px-2 text-center font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
+	                    />
+	                    <span>lookups/run</span>
+	                  </div>
+	                  <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 sm:ml-auto sm:border-t-0 sm:pt-0">
+	                    <HoverCard openDelay={200}>
+	                      <HoverCardTrigger asChild>
+	                        <span
+	                          className={`inline-flex cursor-default items-center gap-1 text-xs transition-[font-weight] ${
+	                            manualGooglePlacesAllowFallback ? "font-semibold text-[#f94877]" : "font-medium text-muted-foreground"
+	                          }`}
+	                        >
+	                          Use <FaFoursquare size={11} className="shrink-0 text-[#f94877]" /> Foursquare Data
+	                          <LuInfo size={11} className="text-muted-foreground/70" />
+	                        </span>
+	                      </HoverCardTrigger>
+	                      <HoverCardContent align="end" className="w-64 text-xs text-muted-foreground">
+	                        When the Google Maps API limit is reached, continue creating events with the Foursquare location instead of stopping the sync.
+	                      </HoverCardContent>
+	                    </HoverCard>
+	                    <button
+	                      type="button"
+	                      role="switch"
+	                      aria-checked={manualGooglePlacesAllowFallback}
+	                      aria-label="use Foursquare after limit is reached"
+	                      onClick={() => {
+	                        setManualGooglePlacesAllowFallback((value) => !value);
+	                        setGooglePlacesPreflight(null);
+	                      }}
+	                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none ${
+	                        manualGooglePlacesAllowFallback ? "bg-[#f94877]" : "bg-input"
 	                      }`}
 	                    >
-	                      Use Foursquare Data
-	                      <LuInfo size={11} className="text-muted-foreground/70" />
-	                    </span>
-	                  </HoverCardTrigger>
-	                  <HoverCardContent align="end" className="w-64 text-xs text-muted-foreground">
-	                    When the Google Maps API limit is reached, continue creating events with the Foursquare location instead of stopping the sync.
-	                  </HoverCardContent>
-	                </HoverCard>
-	                <button
-	                  type="button"
-	                  role="switch"
-	                  aria-checked={manualGooglePlacesAllowFallback}
-	                  aria-label="use Foursquare after limit is reached"
-	                  onClick={() => {
-	                    setManualGooglePlacesAllowFallback((value) => !value);
-	                    setGooglePlacesPreflight(null);
-	                  }}
-	                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none ${
-	                    manualGooglePlacesAllowFallback ? "bg-foreground" : "bg-input"
-	                  }`}
-	                >
-	                  <span className={`inline-block h-3 w-3 transform rounded-full bg-background transition-transform ${manualGooglePlacesAllowFallback ? "translate-x-3.5" : "translate-x-0.5"}`} />
-	                </button>
-	              </div>
+	                      <span className={`inline-block h-3 w-3 transform rounded-full bg-background transition-transform ${manualGooglePlacesAllowFallback ? "translate-x-3.5" : "translate-x-0.5"}`} />
+	                    </button>
+	                  </div>
+	                </>
+	              )}
 	            </div>
             <TabsList className="h-auto w-full flex-wrap justify-stretch gap-1 sm:h-7 sm:w-auto sm:flex-nowrap">
               <TabsTrigger value="count" className="h-7 flex-1 basis-full gap-1.5 px-2 text-xs sm:h-5 sm:basis-auto sm:px-3"><LuList size={11} />last check-ins</TabsTrigger>
