@@ -315,12 +315,12 @@ export function StatsClient({
   const displayedByHour = isFiltered ? (periodByHour ?? []) : byHourOfDay;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-6 py-12 space-y-8 sm:px-4">
       <AppHeader lastSyncedAt={lastSyncedAt} />
 
       {/* header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-4">
           <div>
             <h1 className="text-lg font-semibold flex items-center gap-2">
               <LuChartNoAxesColumn size={16} className="text-muted-foreground" />
@@ -329,7 +329,7 @@ export function StatsClient({
             <p className="text-xs text-muted-foreground mt-1">All-time check-in stats.</p>
           </div>
           {featuredSticker && (
-            <a href="/stickers" className="group relative flex flex-col items-center self-center">
+            <a href="/stickers" className="group relative hidden flex-col items-center self-center min-[380px]:flex">
               <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center p-1.5">
                 <img
                   src={`${featuredSticker.image.prefix}300${featuredSticker.image.name}`}
@@ -350,7 +350,7 @@ export function StatsClient({
             </a>
           )}
         </div>
-        <div className="text-right flex flex-col gap-1">
+        <div className="shrink-0 text-right flex flex-col gap-1">
           <p className="text-sm font-medium font-[family-name:var(--font-geist-mono)]">{uniqueVenues.toLocaleString()}</p>
           <p className="text-xs text-muted-foreground">unique venues</p>
         </div>
@@ -367,9 +367,9 @@ export function StatsClient({
       {/* period picker */}
       <div className="space-y-2">
         {/* row: summary left, pills right */}
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           {/* left: summary */}
-          <div className="text-xs text-muted-foreground shrink-0">
+          <div className="text-xs text-muted-foreground sm:shrink-0">
             {period === "all" && !activeRange ? (
               <span>
                 <span className="font-medium text-foreground font-[family-name:var(--font-geist-mono)]">{totalCheckins.toLocaleString()}</span>
@@ -412,7 +412,7 @@ export function StatsClient({
           </div>
 
           {/* right: pills */}
-          <div className="flex flex-wrap gap-1 items-center justify-end">
+          <div className="flex flex-wrap gap-1 items-center sm:justify-end">
             {pills.map((p) => (
               <button
                 key={p.key}
@@ -480,10 +480,10 @@ export function StatsClient({
 
         {/* custom date range row — shown below when toggled */}
         {(showCustomRange || activeRange) && (
-          <div className="flex items-center gap-2 justify-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className={`h-7 text-xs justify-start font-normal gap-1.5 ${!rangeFrom && !rangeTo && "text-muted-foreground"}`}>
+                <Button variant="outline" size="sm" className={`h-auto min-h-7 w-full whitespace-normal text-left text-xs justify-start font-normal gap-1.5 sm:h-7 sm:w-auto sm:whitespace-nowrap ${!rangeFrom && !rangeTo && "text-muted-foreground"}`}>
                   <LuCalendar size={11} />
                   {rangeFrom ? (
                     !rangeTo || format(rangeFrom, "yyyy-MM-dd") === format(rangeTo, "yyyy-MM-dd") ? (
@@ -498,13 +498,22 @@ export function StatsClient({
                   ) : "select date or range"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
+              <PopoverContent className="max-w-[calc(100vw-3rem)] overflow-x-auto p-0" align="end">
                 <Calendar
                   mode="range"
                   selected={{ from: rangeFrom, to: rangeTo }}
                   onSelect={(r: DateRange | undefined) => { setRangeFrom(r?.from); setRangeTo(r?.to); }}
                   initialFocus
-                  numberOfMonths={2}
+                  numberOfMonths={1}
+                  className="p-2"
+                  classNames={{
+                    month: "space-y-2",
+                    caption_label: "text-xs font-medium",
+                    head_cell: "text-muted-foreground rounded-md w-8 font-normal text-[0.7rem]",
+                    row: "flex w-full mt-1",
+                    cell: "h-8 w-8 text-center text-xs p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                    day: "h-8 w-8 p-0 font-normal aria-selected:opacity-100",
+                  }}
                 />
               </PopoverContent>
             </Popover>
@@ -525,7 +534,7 @@ export function StatsClient({
 
       {/* top venues + categories */}
       {(displayedVenues.length > 0 || displayedCategories.length > 0 || periodLoading) && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="border rounded-xl p-4 space-y-3">
             <div className="flex items-center gap-2">
               <LuTrophy size={13} className="text-muted-foreground" />
@@ -620,7 +629,7 @@ export function StatsClient({
       )}
 
       {/* charts */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         {period === "all" ? (
           <div className="border rounded-xl p-4 space-y-3">
             <div className="flex items-center gap-2">

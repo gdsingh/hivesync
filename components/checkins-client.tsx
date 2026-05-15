@@ -241,13 +241,13 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
       }
     }
     return (
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <PaginationPrevious
           href={page > 1 ? getPageUrl(page - 1) : undefined}
           className={`h-7 text-xs px-2 gap-1 ${page <= 1 ? "pointer-events-none opacity-30" : ""}`}
         />
-        <Pagination className="w-auto flex-1 mx-2">
-          <PaginationContent className="gap-0.5">
+        <Pagination className="w-auto flex-1 mx-2 overflow-hidden">
+          <PaginationContent className="hidden gap-0.5 min-[380px]:flex">
             {pages.map((p, i) =>
               p === "ellipsis" ? (
                 <PaginationItem key={`ellipsis-${i}`}>
@@ -263,6 +263,11 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
             )}
           </PaginationContent>
         </Pagination>
+        <span className="flex-1 text-center text-xs text-muted-foreground min-[380px]:hidden">
+          <span className="font-[family-name:var(--font-geist-mono)]">{page}</span>
+          {" / "}
+          <span className="font-[family-name:var(--font-geist-mono)]">{totalPages}</span>
+        </span>
         <PaginationNext
           href={page < totalPages ? getPageUrl(page + 1) : undefined}
           className={`h-7 text-xs px-2 gap-1 ${page >= totalPages ? "pointer-events-none opacity-30" : ""}`}
@@ -384,12 +389,12 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
   const hasFilter = !!fromParam;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-6 py-12 space-y-8 sm:px-4">
       <AppHeader lastSyncedAt={lastSyncedAt} />
 
       {/* header */}
       <div>
-        <div className="flex items-end justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-lg font-semibold flex items-center gap-2">
               <LuLayoutList size={16} className="text-muted-foreground" />
@@ -406,7 +411,7 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             {hasFilter && (
               <button
                 onClick={clearFilter}
@@ -424,13 +429,22 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
                     : "filter by date"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
+              <PopoverContent className="max-w-[calc(100vw-3rem)] overflow-x-auto p-0" align="end">
                 <Calendar
                   mode="range"
                   selected={dateRange}
                   onSelect={handleRangeSelect}
                   initialFocus
                   numberOfMonths={1}
+                  className="p-2"
+                  classNames={{
+                    month: "space-y-2",
+                    caption_label: "text-xs font-medium",
+                    head_cell: "text-muted-foreground rounded-md w-8 font-normal text-[0.7rem]",
+                    row: "flex w-full mt-1",
+                    cell: "h-8 w-8 text-center text-xs p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                    day: "h-8 w-8 p-0 font-normal aria-selected:opacity-100",
+                  }}
                 />
               </PopoverContent>
             </Popover>
@@ -443,7 +457,7 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
       {totalPages > 1 && <PaginationBar />}
 
       {/* sticky bulk action bar */}
-      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-full bg-background border shadow-lg text-sm transition-all duration-200 ${selected.size > 0 || bulkResult ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
+      <div className={`fixed inset-x-4 bottom-4 z-50 flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-background px-3 py-2.5 text-sm shadow-lg transition-all duration-200 sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:flex-nowrap sm:justify-start sm:gap-3 sm:rounded-full sm:px-4 ${selected.size > 0 || bulkResult ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
           {bulkLoading && <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Spinner />removing…</div>}
           {resyncLoading && <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Spinner />resyncing…</div>}
           {showStop && (
@@ -556,7 +570,7 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
 
                           {/* content */}
                           <div className={`flex-1 min-w-0 transition-opacity ${isSelected ? "opacity-40" : ""}`}>
-                            <div className="flex items-baseline justify-between gap-3">
+                            <div className="flex flex-col gap-0.5 min-[380px]:flex-row min-[380px]:items-baseline min-[380px]:justify-between min-[380px]:gap-3">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 {(c.description || c.stickerImageUrl) ? (() => {
                                   const descLines = (c.description ?? "").split("\n\n").filter((p) => !!p);
@@ -618,9 +632,9 @@ export function CheckinsClient({ initialCheckins, total, unfilteredTotal, page, 
                             {(c.venueCity || c.venueCategory) && (() => {
                               const Icon = getCategoryIcon(c.venueCategory);
                               return (
-                                <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground/50">
+                                <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground/50 min-w-0">
                                   <Icon size={10} className="shrink-0" />
-                                  {[c.venueCategory, c.venueCity].filter(Boolean).join(" · ")}
+                                  <span className="truncate">{[c.venueCategory, c.venueCity].filter(Boolean).join(" · ")}</span>
                                 </p>
                               );
                             })()}

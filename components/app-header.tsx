@@ -46,15 +46,15 @@ export function AppHeader({ lastSyncedAt, rightExtra }: Props) {
   ) : null;
 
   return (
-    <div className="flex items-center justify-between pb-4">
+    <div className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
       <a href={`${prefix}/home`} className="inline-flex items-center gap-2 hover:opacity-70 transition-opacity">
         <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[#ffa500]">
           <LuMapPin size={16} color="white" />
         </span>
         <span className="text-2xl font-semibold tracking-tight leading-none">Hive<span className="font-[family-name:var(--font-geist-mono)]">sync</span></span>
       </a>
-      <div className="flex items-center gap-3">
-        <nav className="flex items-center gap-2 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <nav className="flex flex-wrap items-center gap-2 text-xs">
           {NAV.map((item, i) => (
             <span key={item.href} className="flex items-center gap-2">
               {i > 0 && <span className="text-border">·</span>}

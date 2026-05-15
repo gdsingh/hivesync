@@ -170,7 +170,7 @@ export function SetupWizard({ appUrl, isVercel }: Props) {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4 py-12">
+    <div className="relative flex min-h-screen items-center justify-center px-6 py-12 sm:px-4">
       <div className="w-full max-w-lg space-y-6">
 
         {/* branding */}

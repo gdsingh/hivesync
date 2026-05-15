@@ -21,7 +21,7 @@ export default async function LoginPage({
   const error = errorCode ? errorMessages[errorCode] ?? "Sign-in failed" : null;
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-6 sm:p-4">
       <div className="w-full max-w-sm space-y-6 -mt-[10vh]">
 
         {/* branding */}

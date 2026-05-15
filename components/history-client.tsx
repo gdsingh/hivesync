@@ -67,7 +67,7 @@ export function HistoryClient({ logs: initialLogs, lastSyncedAt }: Props) {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-6 py-12 space-y-8 sm:px-4">
       <AppHeader lastSyncedAt={lastSyncedAt} />
 
       <div className="flex items-center justify-between">
@@ -184,7 +184,7 @@ export function HistoryClient({ logs: initialLogs, lastSyncedAt }: Props) {
               title = "Manual";
               actionTag = "resync";
             } else if (log.type === "POLL") {
-              title = "Daily auto-sync";
+              title = "Scheduled Sync";
               subtitle = "last 24 hours";
               actionTag = "sync";
             } else {

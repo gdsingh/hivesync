@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function StatsLoading() {
   return (
-    <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-6 py-12 space-y-8 sm:px-4">
       {/* app header */}
       <div className="flex items-center justify-between pb-4">
         <Skeleton className="h-5 w-28" />

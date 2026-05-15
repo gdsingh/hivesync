@@ -8,6 +8,16 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 
 *Interested in what it looks like? Check out the [demo](https://gdsingh.github.io/hivesync/).*
 
+### Release notes
+
+#### v1.2.0
+
+- Added a mobile-friendly layout across Home, Stats, Check-ins, History, Login, and Setup screens
+- Improved manual sync controls for phones, including full-width date/year pickers and clearer sync/remove spacing
+- Refined the Connections panel with rounded cards, a collapsible Google Maps safety limits section, and better mobile spacing
+- Improved dialogs, date pickers, pagination, footer controls, and page padding across screen sizes
+- Closes issue #1
+
 ### Features
 
 - **Connect** your Swarm and Google accounts via OAuth
@@ -82,6 +92,25 @@ npm run dev
 
 Visit `http://localhost:3000`, sign in with Google, connect Foursquare, and start syncing.
 
+## Updating
+
+If you deployed Hivesync from a fork or copied repo, sync your repo with `gdsingh/hivesync`, then push the updated `main` branch. Vercel will redeploy from your repo automatically.
+
+```bash
+git remote add upstream https://github.com/gdsingh/hivesync.git
+git fetch upstream
+git checkout main
+git merge upstream/main
+git push origin main
+```
+
+Updates stay at feature parity when the code, database migrations, and required environment variables are all current. Keep your Vercel build command running migrations before the app builds:
+
+```bash
+prisma migrate deploy && next build
+```
+
+Check the release notes and environment variable table after each update. Some features work with defaults, while others may need a new API key or setting before they turn on.
 
 ## Environment variables
 
@@ -193,7 +222,7 @@ Browse all synced check-ins at `/checkins` — a dot-style timeline grouped by d
 
 ## Sync history
 
-Every sync run is logged at `/history` — a timeline of past syncs with type, counts, and timestamps. Covers daily auto-syncs, manual syncs, date range and yearly syncs, deletes, and manual resyncs. The log can be cleared at any time without affecting synced check-ins.
+Every sync run is logged at `/history` — a timeline of past syncs with type, counts, and timestamps. Covers scheduled syncs, manual syncs, date range and yearly syncs, deletes, and manual resyncs. The log can be cleared at any time without affecting synced check-ins.
 
 ## Event format
 

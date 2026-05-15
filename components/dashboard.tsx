@@ -157,6 +157,7 @@ export function Dashboard({
   );
   const [ogMode, setOgMode] = useState(initialOgMode);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [safetyLimitsOpen, setSafetyLimitsOpen] = useState(false);
   const [pendingDisconnect, setPendingDisconnect] = useState(false);
   const [foursquareDisconnected, setFoursquareDisconnected] = useState(false);
   const [rangeFrom, setRangeFrom] = useState<Date | undefined>(undefined);
@@ -736,7 +737,7 @@ export function Dashboard({
   const calendarReady = calendarStatus === "ready";
   const canSync = foursquareConnected && googleConnected && calendarReady;
   return (
-    <div className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+    <div className="max-w-2xl mx-auto px-6 py-12 space-y-8 sm:px-4">
 
       <AppHeader lastSyncedAt={lastSyncedAt} />
 
@@ -763,14 +764,14 @@ export function Dashboard({
                 {foursquareDisplayName ?? googleEmail ?? "hivesync"}
               </p>
               <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                <DialogContent className="max-w-sm">
+                <DialogContent className="max-w-sm rounded-2xl">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2"><LuPlug size={15} className="text-muted-foreground" />Connections</DialogTitle>
                   </DialogHeader>
                   <div className="mt-2">
                     <div className="space-y-2">
                       {/* foursquare */}
-	                      <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
+	                      <div className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <FaFoursquare size={15} className="text-[#f94877] shrink-0" />
                           <div className="min-w-0">
@@ -802,7 +803,7 @@ export function Dashboard({
                       </div>
 
                       {/* google */}
-	                      <div className="rounded-lg border px-3 py-2.5 space-y-3">
+	                      <div className="rounded-xl border px-3 py-2.5 space-y-3">
 	                        <div className="flex items-center justify-between gap-3">
 	                          <div className="flex items-center gap-2.5 min-w-0">
 	                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" className="shrink-0">
@@ -899,49 +900,63 @@ export function Dashboard({
 	                                </div>
 	                              </div>
 	                            </div>
-	                            <div className="rounded border border-amber-500/30 bg-amber-50/60 px-2 py-2 space-y-2 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
-	                              <div className="flex items-center justify-between gap-2">
-	                                <p className="text-[11px] font-medium">safety limits</p>
-	                                {googlePlacesStatus.limitsOverridden && <span className="text-[10px] text-amber-700 dark:text-amber-300">custom</span>}
-	                              </div>
-	                              <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
-	                                These app limits stop Hivesync before it makes more Google Maps calls. Keep Google Cloud quota and budgets enabled too.
-	                              </p>
-	                              <div className="grid grid-cols-3 gap-2">
-	                                {[
-	                                  ["dailyLimit", "daily"],
-	                                  ["monthlyLimit", "monthly"],
-	                                  ["backfillRunLimit", "backfill"],
-	                                ].map(([key, label]) => (
-	                                  <label key={key} className="text-[10px] text-amber-700 dark:text-amber-300">
-	                                    {label}
-	                                    <input
-	                                      type="number"
-	                                      min={0}
-	                                      value={googlePlacesLimitDraft[key as keyof typeof googlePlacesLimitDraft]}
-	                                      onChange={(e) => {
-	                                        setGooglePlacesLimitDraft((prev) => ({ ...prev, [key]: e.target.value }));
-	                                        setGooglePlacesLimitError(null);
-	                                      }}
-	                                      className="mt-1 h-7 w-full rounded border border-amber-500/30 bg-background px-2 font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
-	                                    />
-	                                  </label>
-	                                ))}
-	                              </div>
-	                              <div className="flex items-center justify-between gap-2">
-	                                <p className="text-[10px] text-amber-700 dark:text-amber-300">
-	                                  {googlePlacesLimitError ?? "changes apply immediately"}
-	                                </p>
-	                                <Button
-	                                  size="sm"
-	                                  variant="outline"
-	                                  className="h-7 px-2 text-xs"
-	                                  onClick={saveGooglePlacesLimits}
-	                                  disabled={googlePlacesLimitSaving}
-	                                >
-	                                  {googlePlacesLimitSaving ? <Spinner /> : "save"}
-	                                </Button>
-	                              </div>
+	                            <div className="rounded border border-amber-500/30 bg-amber-50/60 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+	                              <button
+	                                type="button"
+	                                onClick={() => setSafetyLimitsOpen((open) => !open)}
+	                                className="flex w-full items-center justify-between gap-2 px-2 py-2 text-left"
+	                              >
+	                                <span className="text-[11px] font-medium">safety limits</span>
+	                                <span className="flex items-center gap-2">
+	                                  {googlePlacesStatus.limitsOverridden && <span className="text-[10px] text-amber-700 dark:text-amber-300">custom</span>}
+	                                  <LuChevronDown
+	                                    size={12}
+	                                    className={`text-amber-700 transition-transform dark:text-amber-300 ${safetyLimitsOpen ? "rotate-180" : ""}`}
+	                                  />
+	                                </span>
+	                              </button>
+	                              {safetyLimitsOpen && (
+	                                <div className="space-y-2 border-t border-amber-500/20 px-2 pb-2 pt-2">
+	                                  <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+	                                    These app limits stop Hivesync before it makes more Google Maps calls. Keep Google Cloud quota and budgets enabled too.
+	                                  </p>
+	                                  <div className="grid grid-cols-3 gap-2">
+	                                    {[
+	                                      ["dailyLimit", "daily"],
+	                                      ["monthlyLimit", "monthly"],
+	                                      ["backfillRunLimit", "backfill"],
+	                                    ].map(([key, label]) => (
+	                                      <label key={key} className="text-[10px] text-amber-700 dark:text-amber-300">
+	                                        {label}
+	                                        <input
+	                                          type="number"
+	                                          min={0}
+	                                          value={googlePlacesLimitDraft[key as keyof typeof googlePlacesLimitDraft]}
+	                                          onChange={(e) => {
+	                                            setGooglePlacesLimitDraft((prev) => ({ ...prev, [key]: e.target.value }));
+	                                            setGooglePlacesLimitError(null);
+	                                          }}
+	                                          className="mt-1 h-7 w-full rounded border border-amber-500/30 bg-background px-2 font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
+	                                        />
+	                                      </label>
+	                                    ))}
+	                                  </div>
+	                                  <div className="flex items-center justify-between gap-2">
+	                                    <p className="text-[10px] text-amber-700 dark:text-amber-300">
+	                                      {googlePlacesLimitError ?? "changes apply immediately"}
+	                                    </p>
+	                                    <Button
+	                                      size="sm"
+	                                      variant="outline"
+	                                      className="h-7 px-2 text-xs"
+	                                      onClick={saveGooglePlacesLimits}
+	                                      disabled={googlePlacesLimitSaving}
+	                                    >
+	                                      {googlePlacesLimitSaving ? <Spinner /> : "save"}
+	                                    </Button>
+	                                  </div>
+	                                </div>
+	                              )}
 	                            </div>
 	                            </>
 	                          ) : (
@@ -1145,40 +1160,42 @@ export function Dashboard({
 
 	        {syncOpen && canSync && (
 	          <Tabs defaultValue="count">
-	            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-	              <HoverCard openDelay={200}>
-	                <HoverCardTrigger asChild>
-	                  <span className="inline-flex items-center gap-1.5 cursor-default">
-	                    <SiGooglemaps size={12} className="text-[#4285F4]" />
-	                    <span className="font-semibold text-[#4285F4]">Google Maps API limit</span>
-	                    <LuInfo size={11} className="text-[#4285F4]/80" />
-	                  </span>
-	                </HoverCardTrigger>
-	                <HoverCardContent align="start" className="w-64 text-xs text-muted-foreground">
-	                  Sets the maximum number of Google Maps place lookups this manual sync can make. Cached venues do not count against this number.
-	                </HoverCardContent>
-	              </HoverCard>
-	              <input
-	                type="number"
-	                min={0}
-	                max={googlePlacesStatus?.monthlyLimit ?? 500}
-	                value={manualGooglePlacesLimit}
-	                onChange={(e) => {
-	                  const raw = e.target.value;
-	                  if (raw === "") {
-	                    setManualGooglePlacesLimit("");
+	            <div className="mb-4 flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:flex-row sm:items-center">
+	              <div className="flex flex-wrap items-center gap-2">
+	                <HoverCard openDelay={200}>
+	                  <HoverCardTrigger asChild>
+	                    <span className="inline-flex items-center gap-1.5 cursor-default">
+	                      <SiGooglemaps size={12} className="text-[#4285F4]" />
+	                      <span className="font-semibold text-[#4285F4]">Google Maps API limit</span>
+	                      <LuInfo size={11} className="text-[#4285F4]/80" />
+	                    </span>
+	                  </HoverCardTrigger>
+	                  <HoverCardContent align="start" className="w-64 text-xs text-muted-foreground">
+	                    Sets the maximum number of Google Maps place lookups this manual sync can make. Cached venues do not count against this number.
+	                  </HoverCardContent>
+	                </HoverCard>
+	                <input
+	                  type="number"
+	                  min={0}
+	                  max={googlePlacesStatus?.monthlyLimit ?? 500}
+	                  value={manualGooglePlacesLimit}
+	                  onChange={(e) => {
+	                    const raw = e.target.value;
+	                    if (raw === "") {
+	                      setManualGooglePlacesLimit("");
+	                      setGooglePlacesPreflight(null);
+	                      return;
+	                    }
+	                    const max = googlePlacesStatus?.monthlyLimit ?? 500;
+	                    setManualGooglePlacesLimit(Math.min(max, Math.max(0, parseInt(raw) || 0)));
 	                    setGooglePlacesPreflight(null);
-	                    return;
-	                  }
-	                  const max = googlePlacesStatus?.monthlyLimit ?? 500;
-	                  setManualGooglePlacesLimit(Math.min(max, Math.max(0, parseInt(raw) || 0)));
-	                  setGooglePlacesPreflight(null);
-	                }}
-	                placeholder={String(googlePlacesStatus?.backfillRunLimit ?? 250)}
-	                className="h-6 w-16 rounded border border-input bg-background px-2 text-center font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
-	              />
-	              <span>lookups/run</span>
-	              <div className="ml-auto flex items-center gap-1.5">
+	                  }}
+	                  placeholder={String(googlePlacesStatus?.backfillRunLimit ?? 250)}
+	                  className="h-6 w-16 rounded border border-input bg-background px-2 text-center font-[family-name:var(--font-geist-mono)] text-xs text-foreground"
+	                />
+	                <span>lookups/run</span>
+	              </div>
+	              <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 sm:ml-auto sm:border-t-0 sm:pt-0">
 	                <HoverCard openDelay={200}>
 	                  <HoverCardTrigger asChild>
 	                    <span
@@ -1211,16 +1228,16 @@ export function Dashboard({
 	                </button>
 	              </div>
 	            </div>
-	            <TabsList className="h-7">
-              <TabsTrigger value="count" className="text-xs h-5 px-3 gap-1.5"><LuList size={11} />last (x) check-ins</TabsTrigger>
-              <TabsTrigger value="range" className="text-xs h-5 px-3 gap-1.5"><LuCalendarRange size={11} />date / range</TabsTrigger>
-              <TabsTrigger value="year" className="text-xs h-5 px-3 gap-1.5"><LuCalendarDays size={11} />year</TabsTrigger>
+            <TabsList className="h-auto w-full flex-wrap justify-stretch gap-1 sm:h-7 sm:w-auto sm:flex-nowrap">
+              <TabsTrigger value="count" className="h-7 flex-1 basis-full gap-1.5 px-2 text-xs sm:h-5 sm:basis-auto sm:px-3"><LuList size={11} />last check-ins</TabsTrigger>
+              <TabsTrigger value="range" className="h-7 flex-1 basis-full gap-1.5 px-2 text-xs sm:h-5 sm:basis-auto sm:px-3"><LuCalendarRange size={11} />date / range</TabsTrigger>
+              <TabsTrigger value="year" className="h-7 flex-1 basis-full gap-1.5 px-2 text-xs sm:h-5 sm:basis-auto sm:px-3"><LuCalendarDays size={11} />year</TabsTrigger>
             </TabsList>
 
             {/* last N tab */}
             <TabsContent value="count" className="mt-5 space-y-3">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="number"
                     id="action-count"
@@ -1241,7 +1258,7 @@ export function Dashboard({
                     </>
                   )}
                 </div>
-                <div className="flex items-center gap-2 ml-auto">
+                <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex sm:items-center">
                   <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors" onClick={handleQuickSync} disabled={quickLoading || quickCount === ""}>
                     <LuRefreshCw size={11} />sync
                   </Button>
@@ -1269,7 +1286,7 @@ export function Dashboard({
               <div className="space-y-1.5 min-h-[1rem]">
                 {Number(quickCount) > 15 && <p className="text-xs text-amber-500">over 15 check-ins may timeout</p>}
                 {(quickLoading || quickResult) && !quickError && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${quickLoading ? "bg-muted text-muted-foreground" : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"}`}>
                       {quickLoading ? <><Spinner className="size-3" />syncing{" "}<span className="font-[family-name:var(--font-geist-mono)]">{quickCount}</span>{" "}check-ins…</> : <>✓ <span className="font-[family-name:var(--font-geist-mono)]">{quickResult!.synced}</span> new, <span className="font-[family-name:var(--font-geist-mono)]">{quickResult!.skipped}</span> skipped</>}
                     </span>
@@ -1288,7 +1305,97 @@ export function Dashboard({
             </TabsContent>
 
             {/* year tab */}
-            <TabsContent value="year" className="mt-5 space-y-3">
+            <TabsContent value="year" className="mt-5 space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="flex w-full items-center gap-2 sm:w-auto">
+	                <Select value={fromYear} onValueChange={(v) => { setFromYear(v); setDeleteYearValue(v); setDeleteYearResult(null); setGooglePlacesPreflight(null); setSyncState({ type: "idle" }); }}>
+                    <SelectTrigger className="h-7 flex-1 text-xs font-[family-name:var(--font-geist-mono)] sm:w-24 sm:flex-none"><SelectValue placeholder="year" /></SelectTrigger>
+                    <SelectContent>
+                      {years.map((y) => <SelectItem key={y} value={String(y)} className="font-[family-name:var(--font-geist-mono)]">{y}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {fromYear && (
+	                  <button onClick={() => { setFromYear(""); setDeleteYearValue(String(currentYear)); setDeleteYearResult(null); setGooglePlacesPreflight(null); setSyncState({ type: "idle" }); }} className="shrink-0 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex sm:items-center">
+	                  <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors" onClick={handleFullSync} disabled={syncState.type === "loading" || syncState.type === "running" || googlePlacesPreflightLoading || !fromYear}>
+                    <LuRefreshCw size={11} />sync
+                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors" disabled={deleteYearLoading || !fromYear}>
+                        <LuTrash2 size={11} />remove
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearValue}</span> check-ins?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Permanently removes <strong>{yearCounts[fromYear]?.synced != null ? <><span className="font-[family-name:var(--font-geist-mono)]">{yearCounts[fromYear].synced}</span> synced</> : "all synced"} calendar events</strong> and records from <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearValue}</span>. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDeleteYear} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Remove</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+              {/* status slot: count → spinner → pill */}
+              <div className="min-h-[1rem]">
+              {fromYear && (() => {
+                const isActive = syncState.type !== "idle" || deleteYearLoading || !!deleteYearResult;
+                return (
+                  <>
+                    {!isActive && (
+                      <div className="space-y-1.5">
+                        <div className="text-xs text-muted-foreground">
+                          {yearCountLoading ? <span className="flex items-center gap-1.5"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></span> : yearCounts[fromYear] != null ? (() => {
+                            const { foursquare, synced } = yearCounts[fromYear];
+                            return <span className="flex flex-wrap items-center gap-1.5">
+                              {foursquare != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><SiSwarm size={10} color="#ffa500" /><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{foursquare.toLocaleString()}</span> on swarm</span>}
+                              {synced != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{synced.toLocaleString()}</span> synced</span>}
+                              <span className="text-[10px] text-muted-foreground/40" title="Swarm displays check-ins in local time — counts may differ by 1 at year boundaries.">±1 at boundaries</span>
+                            </span>;
+                          })() : null}
+                        </div>
+                        {yearCounts[fromYear]?.foursquare != null && yearCounts[fromYear]?.synced != null && (() => {
+                          const pct = Math.min(100, Math.round((yearCounts[fromYear].synced! / yearCounts[fromYear].foursquare!) * 100));
+                          const color = pct >= 100 ? "hsl(142, 71%, 45%)" : pct >= 75 ? "hsl(142, 60%, 55%)" : pct >= 50 ? "hsl(25, 95%, 53%)" : pct >= 25 ? "hsl(38, 92%, 50%)" : "hsl(0, 0%, 53%)";
+                          return (
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+                              </div>
+                              <span className="text-xs text-muted-foreground/50 font-[family-name:var(--font-geist-mono)] shrink-0">{pct}%</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+	                    {googlePlacesPreflightLoading && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium"><Spinner />checking maps usage…</span>}
+	                    {googlePlacesPreflight && !googlePlacesPreflightLoading && syncState.type === "idle" && (
+	                      <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+	                        <LuMapPin size={10} /><span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.estimatedGoogleCalls}</span> maps lookups, <span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.fallbackCount}</span> fallback
+	                      </span>
+	                    )}
+	                    {syncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
+                    {syncState.type === "running" && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />{syncState.synced} new, {syncState.skipped} skipped</span>
+                        <button onClick={handleStopSync} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-medium"><LuX size={10} />stop</button>
+                      </div>
+                    )}
+                    {syncState.type === "done" && <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-medium">✓ <span className="font-[family-name:var(--font-geist-mono)]">{syncState.synced}</span> new, <span className="font-[family-name:var(--font-geist-mono)]">{syncState.skipped}</span> skipped</span>}
+                    {syncState.type === "error" && <p className="text-xs text-destructive">{syncState.message}</p>}
+                    {deleteYearLoading && <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Spinner />removing <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearValue}</span> check-ins…</div>}
+                    {deleteYearResult && !deleteYearLoading && <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium">✓ <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearResult.deleted}</span> removed{deleteYearResult.errors > 0 ? <>, <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearResult.errors}</span> errors</> : ""}</span>}
+                  </>
+                );
+              })()}
+              </div>
               <div className="rounded-md border border-border/70 bg-muted/25 px-3 py-2">
                 <p className="text-[11px] leading-4 text-muted-foreground">
                   {hasCheckedYearGap && unscannedGap != null
@@ -1326,136 +1433,53 @@ export function Dashboard({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-	                <Select value={fromYear} onValueChange={(v) => { setFromYear(v); setDeleteYearValue(v); setDeleteYearResult(null); setGooglePlacesPreflight(null); setSyncState({ type: "idle" }); }}>
-                  <SelectTrigger className="h-7 text-xs w-24 font-[family-name:var(--font-geist-mono)]"><SelectValue placeholder="year" /></SelectTrigger>
-                  <SelectContent>
-                    {years.map((y) => <SelectItem key={y} value={String(y)} className="font-[family-name:var(--font-geist-mono)]">{y}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                {fromYear && (
-                  <>
-                    <span className="text-muted-foreground/30">·</span>
-	                    <button onClick={() => { setFromYear(""); setDeleteYearValue(String(currentYear)); setDeleteYearResult(null); setGooglePlacesPreflight(null); setSyncState({ type: "idle" }); }} className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
-                  </>
-                )}
-                <div className="flex items-center gap-2 ml-auto">
-	                  <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-foreground hover:text-background hover:border-foreground transition-colors" onClick={handleFullSync} disabled={syncState.type === "loading" || syncState.type === "running" || googlePlacesPreflightLoading || !fromYear}>
-                    <LuRefreshCw size={11} />sync
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="outline" className="h-7 text-xs px-3 gap-1.5 hover:bg-red-500 hover:text-white hover:border-red-500 transition-colors" disabled={deleteYearLoading || !fromYear}>
-                        <LuTrash2 size={11} />remove
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Remove <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearValue}</span> check-ins?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Permanently removes <strong>{yearCounts[fromYear]?.synced != null ? <><span className="font-[family-name:var(--font-geist-mono)]">{yearCounts[fromYear].synced}</span> synced</> : "all synced"} calendar events</strong> and records from <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearValue}</span>. This action cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteYear} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Remove</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-              {/* status slot: count → spinner → pill */}
-              <div className="min-h-[1rem]">
-              {fromYear && (() => {
-                const isActive = syncState.type !== "idle" || deleteYearLoading || !!deleteYearResult;
-                return (
-                  <>
-                    {!isActive && (
-                      <div className="space-y-1.5">
-                        <div className="text-xs text-muted-foreground">
-                          {yearCountLoading ? <span className="flex items-center gap-1.5"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></span> : yearCounts[fromYear] != null ? (() => {
-                            const { foursquare, synced } = yearCounts[fromYear];
-                            return <span className="flex items-center gap-1.5">
-                              {foursquare != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><SiSwarm size={10} color="#ffa500" /><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{foursquare.toLocaleString()}</span> on swarm</span>}
-                              {synced != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{synced.toLocaleString()}</span> synced</span>}
-                              <span className="text-[10px] text-muted-foreground/40" title="Swarm displays check-ins in local time — counts may differ by 1 at year boundaries.">±1 at boundaries</span>
-                            </span>;
-                          })() : null}
-                        </div>
-                        {yearCounts[fromYear]?.foursquare != null && yearCounts[fromYear]?.synced != null && (() => {
-                          const pct = Math.min(100, Math.round((yearCounts[fromYear].synced! / yearCounts[fromYear].foursquare!) * 100));
-                          const color = pct >= 100 ? "hsl(142, 71%, 45%)" : pct >= 75 ? "hsl(142, 60%, 55%)" : pct >= 50 ? "hsl(25, 95%, 53%)" : pct >= 25 ? "hsl(38, 92%, 50%)" : "hsl(0, 0%, 53%)";
-                          return (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
-                              </div>
-                              <span className="text-xs text-muted-foreground/50 font-[family-name:var(--font-geist-mono)] shrink-0">{pct}%</span>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-	                    {googlePlacesPreflightLoading && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium"><Spinner />checking maps usage…</span>}
-	                    {googlePlacesPreflight && !googlePlacesPreflightLoading && syncState.type === "idle" && (
-	                      <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-	                        <LuMapPin size={10} /><span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.estimatedGoogleCalls}</span> maps lookups, <span className="font-[family-name:var(--font-geist-mono)]">{googlePlacesPreflight.fallbackCount}</span> fallback
-	                      </span>
-	                    )}
-	                    {syncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
-                    {syncState.type === "running" && (
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />{syncState.synced} new, {syncState.skipped} skipped</span>
-                        <button onClick={handleStopSync} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-medium"><LuX size={10} />stop</button>
-                      </div>
-                    )}
-                    {syncState.type === "done" && <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-medium">✓ <span className="font-[family-name:var(--font-geist-mono)]">{syncState.synced}</span> new, <span className="font-[family-name:var(--font-geist-mono)]">{syncState.skipped}</span> skipped</span>}
-                    {syncState.type === "error" && <p className="text-xs text-destructive">{syncState.message}</p>}
-                    {deleteYearLoading && <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Spinner />removing <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearValue}</span> check-ins…</div>}
-                    {deleteYearResult && !deleteYearLoading && <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium">✓ <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearResult.deleted}</span> removed{deleteYearResult.errors > 0 ? <>, <span className="font-[family-name:var(--font-geist-mono)]">{deleteYearResult.errors}</span> errors</> : ""}</span>}
-                  </>
-                );
-              })()}
-              </div>
             </TabsContent>
 
             {/* range tab */}
-            <TabsContent value="range" className="mt-5 space-y-3">
-              <div className="flex items-center gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className={`h-7 text-xs justify-start font-normal gap-1.5 ${!rangeFrom && !rangeTo && "text-muted-foreground"}`}>
-                      <LuCalendar size={11} />
-                      {rangeFrom || rangeTo ? (
-                        !rangeTo ? (
-                          <>{format(rangeFrom!, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom!, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom!, "yyyy")}</span></>
-                        ) : (
-                          <>
-                            {rangeFrom ? <>{format(rangeFrom, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "yyyy")}</span></> : "start"}
-                            <span className="mx-1 opacity-40">→</span>
-                            <>{format(rangeTo, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "yyyy")}</span></>
-                          </>
-                        )
-                      ) : "select range"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-	                    <Calendar
-	                      mode="range"
-	                      selected={{ from: rangeFrom, to: rangeTo }}
-	                      onSelect={(r: DateRange | undefined) => { setRangeFrom(r?.from); setRangeTo(r?.to); setGooglePlacesPreflight(null); }}
-                      initialFocus
-                      numberOfMonths={2}
-                    />
-                  </PopoverContent>
-                </Popover>
-                {(rangeFrom || rangeTo) && (
-                  <>
-                    <span className="text-muted-foreground/30">·</span>
-	                    <button onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setRangeDeleteResult(null); setGooglePlacesPreflight(null); setRangeSyncState({ type: "idle" }); }} className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
-                  </>
-                )}
-                <div className="flex items-center gap-2 ml-auto">
+            <TabsContent value="range" className="mt-5 space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="flex w-full items-center gap-2 sm:w-auto">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-auto min-h-7 flex-1 whitespace-normal text-left text-xs justify-start font-normal gap-1.5 sm:h-7 sm:flex-none sm:whitespace-nowrap ${!rangeFrom && !rangeTo && "text-muted-foreground"}`}>
+                        <LuCalendar size={11} />
+                        {rangeFrom || rangeTo ? (
+                          !rangeTo ? (
+                            <>{format(rangeFrom!, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom!, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom!, "yyyy")}</span></>
+                          ) : (
+                            <>
+                              {rangeFrom ? <>{format(rangeFrom, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeFrom, "yyyy")}</span></> : "start"}
+                              <span className="mx-1 opacity-40">→</span>
+                              <>{format(rangeTo, "MMM")} <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "d")}</span>, <span className="font-[family-name:var(--font-geist-mono)]">{format(rangeTo, "yyyy")}</span></>
+                            </>
+                          )
+                        ) : "select range"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="max-w-[calc(100vw-3rem)] overflow-x-auto p-0" align="start">
+	                      <Calendar
+	                        mode="range"
+	                        selected={{ from: rangeFrom, to: rangeTo }}
+	                        onSelect={(r: DateRange | undefined) => { setRangeFrom(r?.from); setRangeTo(r?.to); setGooglePlacesPreflight(null); }}
+                        initialFocus
+                        numberOfMonths={1}
+                        className="p-2"
+                        classNames={{
+                          month: "space-y-2",
+                          caption_label: "text-xs font-medium",
+                          head_cell: "text-muted-foreground rounded-md w-8 font-normal text-[0.7rem]",
+                          row: "flex w-full mt-1",
+                          cell: "h-8 w-8 text-center text-xs p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                          day: "h-8 w-8 p-0 font-normal aria-selected:opacity-100",
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  {(rangeFrom || rangeTo) && (
+	                  <button onClick={() => { setRangeFrom(undefined); setRangeTo(undefined); setRangeDeleteResult(null); setGooglePlacesPreflight(null); setRangeSyncState({ type: "idle" }); }} className="shrink-0 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors">clear</button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex sm:items-center">
                   <Button
                     size="sm"
                     variant="outline"
@@ -1495,7 +1519,7 @@ export function Dashboard({
                       <div className="text-xs text-muted-foreground">
                         {rangeCountLoading ? <span className="flex items-center gap-1.5"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-20 rounded-full" /></span> : rangeCount != null ? (() => {
                           const { foursquare, synced } = rangeCount;
-                          return <span className="flex items-center gap-1.5">
+                          return <span className="flex flex-wrap items-center gap-1.5">
                             {foursquare != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><SiSwarm size={10} color="#ffa500" /><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{foursquare.toLocaleString()}</span> on swarm</span>}
                             {synced != null && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground"><span className="font-[family-name:var(--font-geist-mono)] font-medium text-foreground">{synced.toLocaleString()}</span> synced</span>}
                           </span>;
@@ -1510,7 +1534,7 @@ export function Dashboard({
 	                    )}
 	                    {rangeSyncState.type === "loading" && <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />syncing…</span>}
                     {rangeSyncState.type === "running" && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium font-[family-name:var(--font-geist-mono)]"><Spinner />{rangeSyncState.synced} new, {rangeSyncState.skipped} skipped{rangeSyncState.total ? ` of ${rangeSyncState.total}` : ""}</span>
                         <button onClick={handleStopRangeSync} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-medium"><LuX size={10} />stop</button>
                       </div>
@@ -1532,7 +1556,7 @@ export function Dashboard({
 
       <Separator />
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-row flex-wrap items-center justify-between gap-3">
         <a
           href="https://github.com/gdsingh/hivesync"
           target="_blank"
@@ -1542,7 +1566,7 @@ export function Dashboard({
           <SiGithub size={13} />
           github
         </a>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <button onClick={() => setSettingsOpen(true)} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${foursquareConnected && googleConnected ? "bg-green-500" : "bg-amber-500"}`} />
             connections
