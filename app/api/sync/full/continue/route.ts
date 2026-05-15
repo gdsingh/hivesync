@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
   const result = await syncCheckins(items, calendarService, calendarId, foursquareToken, {
     mode: "backfill",
     jobId: job.id,
+    googleMapsEnabled: userConfig.googleMapsEnabled,
   });
 
   const newOffset = claimedOffset + CHUNK_SIZE;

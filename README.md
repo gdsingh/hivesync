@@ -10,6 +10,22 @@ Hivesync creates a Google Calendar event with the venue, location, friends, and 
 
 ### Release notes
 
+#### v1.3.0
+
+**New**
+- Added selectable sync history rows so individual history entries can be removed without clearing everything
+- Added a Google Maps enrichment toggle, with Foursquare venue locations used when enrichment is disabled
+- Added clearer Foursquare fallback states to manual sync controls and the Connections module
+
+**Bug Fixes**
+- Fixed empty check-in hover cards when a check-in only had a Foursquare link
+- Tightened the page number input on the Check-ins page
+- Improved Google Maps preflight behavior when enrichment is disabled
+
+**Cleanup**
+- Refined Check-ins, History, and manual sync UI details from the open-issue pass
+- Closed the remaining open UI issues after the mobile layout release
+
 #### v1.2.0
 
 - Added a mobile-friendly layout across Home, Stats, Check-ins, History, Login, and Setup screens

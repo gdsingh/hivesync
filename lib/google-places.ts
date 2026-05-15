@@ -12,6 +12,7 @@ export type GooglePlacesMode = "normal" | "backfill";
 export interface GooglePlacesContext {
   mode?: GooglePlacesMode;
   jobId?: string;
+  googleMapsEnabled?: boolean;
 }
 
 export interface VenueLocationResult {
@@ -36,7 +37,8 @@ export interface GooglePlacesUsageStatus {
   mappedVenueCount: number;
   lookupStatusCounts: Record<string, number>;
   limitsOverridden: boolean;
-  status: "no_key" | "enabled" | "near_limit" | "capped" | "error";
+  googleMapsEnabled: boolean;
+  status: "disabled" | "no_key" | "enabled" | "near_limit" | "capped" | "error";
 }
 
 function formatVenueLocation(venue: FoursquareVenue): string {
@@ -123,6 +125,25 @@ export async function updateGooglePlacesLimits(input: {
   return getGooglePlacesUsageStatus();
 }
 
+export async function getGoogleMapsEnrichmentEnabled(): Promise<boolean> {
+  const config = await db.userConfig.findUnique({
+    where: { id: 1 },
+    select: { googleMapsEnabled: true },
+  });
+
+  return config?.googleMapsEnabled ?? true;
+}
+
+export async function updateGoogleMapsEnrichmentEnabled(enabled: boolean) {
+  await db.userConfig.upsert({
+    where: { id: 1 },
+    update: { googleMapsEnabled: enabled },
+    create: { id: 1, googleMapsEnabled: enabled },
+  });
+
+  return getGooglePlacesUsageStatus();
+}
+
 function usageDate(now = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
@@ -153,7 +174,8 @@ export async function getGooglePlacesUsageStatus(): Promise<GooglePlacesUsageSta
   const limits = await getGooglePlacesLimits();
   const today = usageDate();
   const month = usageMonth();
-  const [todayUsage, monthUsageRows, totalUsageRows, cacheCount, mappedVenueCount, lookupStatusRows] = await Promise.all([
+  const [googleMapsEnabled, todayUsage, monthUsageRows, totalUsageRows, cacheCount, mappedVenueCount, lookupStatusRows] = await Promise.all([
+    getGoogleMapsEnrichmentEnabled(),
     db.googlePlacesUsage.findUnique({ where: { date: today }, select: { calls: true, cacheHits: true } }),
     db.googlePlacesUsage.findMany({ where: { date: { startsWith: month } }, select: { calls: true, cacheHits: true } }),
     db.googlePlacesUsage.findMany({ select: { calls: true, cacheHits: true } }),
@@ -192,7 +214,8 @@ export async function getGooglePlacesUsageStatus(): Promise<GooglePlacesUsageSta
     cacheCount,
     mappedVenueCount,
     lookupStatusCounts,
-    status: !hasKey ? "no_key" : capped ? "capped" : nearLimit ? "near_limit" : "enabled",
+    googleMapsEnabled,
+    status: !googleMapsEnabled ? "disabled" : !hasKey ? "no_key" : capped ? "capped" : nearLimit ? "near_limit" : "enabled",
   };
 }
 
@@ -319,6 +342,8 @@ export async function resolveVenueLocation(
   context: GooglePlacesContext = {}
 ): Promise<VenueLocationResult> {
   const fallback = formatVenueLocation(venue);
+  const googleMapsEnabled = context.googleMapsEnabled ?? await getGoogleMapsEnrichmentEnabled();
+  if (!googleMapsEnabled) return { location: fallback, source: "foursquare", skippedReason: "disabled" };
   if (!venue.id) return { location: fallback, source: "foursquare", skippedReason: "missing_venue_id" };
 
   const cached = await db.venueEnrichment.findUnique({ where: { foursquareVenueId: venue.id } });
