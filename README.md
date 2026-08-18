@@ -177,7 +177,7 @@ Then set `DATABASE_URL=postgresql://postgres:password@localhost:5432/hivesync`.
 
 ## Background sync
 
-Hivesync automatically polls for new check-ins once per day using Vercel's built-in cron (free tier). The cron job is defined in `vercel.json` and runs at 09:00 UTC — no setup needed once deployed. The "last synced" indicator on the home page reflects both individual check-in syncs and cron job completions.
+Hivesync automatically polls for new check-ins once per day using Vercel's built-in cron (free tier). The cron jobs are defined in `vercel.json`: the daily sync runs at 09:00 UTC, and a weekly catch-up runs Sundays at 10:00 UTC. The catch-up checks the previous 30 days for check-ins that were entered late; already-synced check-ins are safely skipped. No setup is needed once deployed. The "last synced" indicator on the home page reflects both individual check-in syncs and cron job completions.
 
 **Want more frequent sync?** Set up a free job on [cron-job.org](https://cron-job.org) pointing at:
 - URL: `POST https://your-app.vercel.app/api/sync/poll`

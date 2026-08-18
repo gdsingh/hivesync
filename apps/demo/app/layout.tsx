@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { LuExternalLink } from "react-icons/lu";
 import { sitePath } from "@/lib/site-path";
 import "./globals.css";
 
@@ -33,14 +32,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-sans antialiased bg-background text-foreground">
-        <div className="max-w-2xl mx-auto px-6 pt-8 sm:px-4">
-          <div className="rounded-lg px-4 py-3 text-sm font-bold flex items-center justify-center gap-3" style={{ backgroundColor: "#fff", border: "1px solid #ffa500", color: "#ffa500" }}>
-            <span>You&apos;re viewing a static demo of Hivesync with sample data.</span>
-            <a href="https://github.com/gdsingh/hivesync" target="_blank" rel="noopener noreferrer" className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold text-white hover:opacity-80 transition-opacity" style={{ backgroundColor: "#ffa500" }}>
-              Deploy your own <LuExternalLink size={11} />
-            </a>
-          </div>
-        </div>
         {children}
       </body>
     </html>
